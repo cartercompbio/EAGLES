@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import argparse
 from scipy import sparse
 from scipy.sparse import coo_matrix
 
@@ -43,8 +44,6 @@ def directional_scoring(G, E):
     S: Gene scores matrix (samples x genes)
     """
 
-    from scipy.sparse import coo_matrix
-
     sample_names = G.index
     snp_names = G.columns
     gene_names = E.columns
@@ -73,7 +72,6 @@ def directional_scoring(G, E):
     return S_df
 
 if __name__ == "__main__":
-    import argparse
 
     parser = argparse.ArgumentParser(description="Gene scoring")
     parser.add_argument("--genotypes", required=True, help="Path to genotype matrix")
