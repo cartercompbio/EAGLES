@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 import pandas as pd
 import argparse
@@ -84,6 +86,17 @@ if __name__ == "__main__":
     # Load data
     G_df, E_df = load_data(args.genotypes, args.effects)
 
+    print(f"Genotype matrix shape: {G_df.shape} (samples x SNPs)")
+    print(f"Effect matrix shape:   {E_df.shape} (SNPs x genes)")
+
+    # Ensure snps are aligned in same order
+    common_snps = G_df.columns.intersection(E_df.index)
+    G_df = G_df[common_snps]
+    E_df = E_df.loc[common_snps]
+    
+    print(f"Using {len(common_snps)} SNPs for scoring.")
+
+    # Then proceed with scoring method selected
     if args.method == "matrixmult":
         result = matrix_mult_scoring(G_df, E_df)
     else:
