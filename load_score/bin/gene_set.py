@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import pandas as pd
 import argparse
 
@@ -6,8 +8,7 @@ def load_long_effect(E_path):
     Load long-form SNP-gene-effect table with columns: Gene, Variant, slope (could allow for flexibility later on)
     """
     df = pd.read_csv(E_path, sep='\t')
-    if not {'Gene', 'Variant', 'slope'}.issubset(df.columns):
-        raise ValueError("Input SNP x Gene file must contain 'Gene', 'Variant', and 'slope' columns.")
+    df.columns = ['Gene', 'Variant', 'ES']
     return df
 
 def load_gene_set(gene_set_path):
@@ -22,7 +23,7 @@ def to_dense_matrix(df_long, gene_set):
     Convert long-form SNP-gene-effect table to dense matrix, keeping only genes in the gene set.
     """
     df_filtered = df_long[df_long["Gene"].isin(gene_set)]
-    df_dense = df_filtered.pivot(index="Variant", columns="Gene", values="slope")
+    df_dense = df_filtered.pivot(index="Variant", columns="Gene", values="ES")
     return df_dense.fillna(0)
 
 if __name__ == "__main__":
