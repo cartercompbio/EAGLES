@@ -9,3 +9,55 @@ conda-forge::scipy 1.16.0\
 conda-forge::pandas 2.3.1\
 conda-forge::numpy 2.3.2
 
+## Set up nextflow config file
+1. touch /cellar/users/<**yours**>/.nextflow/config
+2. vim /cellar/users/<**yours**>/.nextflow/config and then paste in the following (changing to yours)
+3. esc then ":wq" to save config file
+
+resume = true
+dag.overwrite = true
+workDir='/cellar/users/domeyer/nextflow/work' **change to yours**
+
+process {
+    cpus = 1
+    memory = '6GB'
+    executor = 'slurm'
+    queue = 'carter-compute'
+    errorStrategy = 'finish'
+}
+
+executor {
+    name = 'slurm'
+    queueSize = 32
+}
+
+notification {
+    enabled = true 
+    to = 'domeyer@ucsd.edu' **change to yours**
+}
+
+## modify wrapper bash script (run_load_score.sh)
+#! /bin/bash\
+#SBATCH --mem=64G\
+#SBATCH -o /cellar/users/domeyer/sbatch_outs/out/%A.%x.%a.out #STDOUT\
+#SBATCH -e /cellar/users/domeyer/sbatch_outs/err/%A.%x.%a.err # STDERR\
+#SBATCH --partition=carter-compute\
+conda run -n eagle nextflow /cellar/users/domeyer/EAGLE/load_score/load_score.nf\
+\
+should become
+\
+#! /bin/bash\
+#SBATCH --mem=64G\
+#SBATCH -o <**output_folder**>\
+#SBATCH -e <**error_folder**>\
+#SBATCH --partition=carter-compute\
+conda run -n <**conda_env**> nextflow <**/path/to/load_score.nf**>
+
+## change output directory (to not overwrite existing results)
+in load_score.nf change line 11 change
++ params.outdir = "/cellar/shared/carterlab/projects/eagle/test_out"\
+to
++ params.outdir = "/cellar/shared/carterlab/projects/eagle/test_out_noa"
+
+## run pipeline
+should be as simple as sbatch /path/to/run_load_score.sh
