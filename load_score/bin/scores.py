@@ -5,6 +5,7 @@ import pandas as pd
 import argparse
 from scipy import sparse
 from scipy.sparse import coo_matrix
+from sklearn.decomposition import PCA
 
 def load_data(G_path, E_path):
     """
@@ -72,6 +73,64 @@ def directional_scoring(G, E):
 
     S_df = pd.DataFrame(scores, index=sample_names, columns=gene_names)
     return S_df
+
+def direction_allele_count(G, E):
+    """
+    Normalized count of allele associated with higher expression
+    
+    Inputs:
+    G: Genotype matrix (samples x SNPs)
+    E: Effect size matrix (SNPs x genes)
+        
+    Outputs:
+    S: Gene scores matrix (samples x genes)
+        values are between [0,1]
+    """
+    
+    res = {}
+
+    for gene in E:
+
+        pos_snps = E[E[gene]>0].index
+        neg_snps = E[E[gene]<0].index
+
+        score = (G[pos_snps].join(2 - G[neg_snps]).sum(axis = 1)/(2*(len(pos_snps) + len(neg_snps))))
+        res[gene] = score
+    res = pd.DataFrame(res).loc[G.index, E.columns].fillna(0)
+    return res
+
+def pc1_score(G, E):
+    """
+    PC1 computed over all eQTLs associated with a gene
+        (count of allele associated with higher expression)
+    
+    Inputs:
+    G: Genotype matrix (samples x SNPs)
+    E: Effect size matrix (SNPs x genes)
+        
+    Outputs:
+    S: Gene scores matrix (samples x genes)
+        values are between [0,1]
+    """
+    res = {}
+
+    for gene in (E!=0).any().replace(False, np.nan).dropna().index:
+
+        pos_snps = E[E[gene]>0].index
+        neg_snps = E[E[gene]<0].index
+        cur = G[pos_snps].join(2 - G[neg_snps])
+        try:
+            assert cur.shape[1]>1
+            pca = PCA(n_components = 1)
+            pca.fit(cur.T)
+            score = pd.Series(pca.components_[0], index = cur.index)
+        except AssertionError:
+            score = cur.iloc[:, 0]
+        score = (score - score.min())/(score.max() - score.min())
+
+        res[gene] = score
+    res = pd.DataFrame(res)
+    return res
 
 if __name__ == "__main__":
 
