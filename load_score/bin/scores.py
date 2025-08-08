@@ -13,6 +13,12 @@ def load_data(G_path, E_path):
     """
     G = pd.read_csv(G_path, sep='\t', index_col=0)
     E = pd.read_csv(E_path, sep='\t', index_col=0)
+
+    # Ensure snps are aligned in same order
+    common_snps = G.columns.intersection(E.index)
+    G = G[common_snps]
+    E = E.loc[common_snps]
+    
     return G, E
 
 def matrix_mult_scoring(G, E):
@@ -137,7 +143,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gene scoring")
     parser.add_argument("--genotypes", required=True, help="Path to genotype matrix")
     parser.add_argument("--effects", required=True, help="Path to SNP-gene effect matrix")
-    parser.add_argument("--method", choices=["matrixmult", "directional"], default="directional", help="Scoring method: 'matrixmult', 'directional', TBA...")
+    parser.add_argument("--method", choices=["matrixmult", "directional", "directional_count", "pc1"], default="directional", help="Scoring method: 'matrixmult', 'directional', 'directional_count', 'pc1', TBA...")
     parser.add_argument("--output", required=True, help="Path to output gene scores file")
 
     args = parser.parse_args()
@@ -145,21 +151,17 @@ if __name__ == "__main__":
     # Load data
     G_df, E_df = load_data(args.genotypes, args.effects)
 
-    print(f"Genotype matrix shape: {G_df.shape} (samples x SNPs)")
-    print(f"Effect matrix shape:   {E_df.shape} (SNPs x genes)")
-
-    # Ensure snps are aligned in same order
-    common_snps = G_df.columns.intersection(E_df.index)
-    G_df = G_df[common_snps]
-    E_df = E_df.loc[common_snps]
-    
     print(f"Using {len(common_snps)} SNPs for scoring.")
 
     # Then proceed with scoring method selected
     if args.method == "matrixmult":
         result = matrix_mult_scoring(G_df, E_df)
-    else:
+    elif args.method == 'directional':
         result = directional_scoring(G_df, E_df)
+    elif args.method == 'directional_count':
+        result = direction_allele_count(G_df, E_df)
+    else:
+        result = pc1_score(G_df, E_df)
 
     result.to_csv(args.output, sep="\t")
     print(f"Gene scores written to: {args.output}")
