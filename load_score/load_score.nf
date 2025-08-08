@@ -6,6 +6,7 @@
 //conda-forge::scipy 1.16.0
 //conda-forge::pandas 2.3.1
 //conda-forge::numpy 2.3.2
+//conda-forge::scikit-learn 1.7.1
 
 //at some point reassess these and potentially shift towards input values instead
 params.outdir = "/cellar/shared/carterlab/projects/eagle/test_out"
@@ -55,7 +56,7 @@ workflow {
 process GENESETSLICE{
     cpus 1
     memory 16.GB
-    //publishDir params.outdir + '/geneseteqtls' //probably can omit this after debugging
+    publishDir params.outdir + '/geneseteqtls' //probably can omit this after debugging
     
     input:
     tuple val(tissue_id), path(tissue_path, name: "tissue_input.*"), val(gene_set_id), path(gene_set_path, name: "geneset_input.*")
@@ -83,7 +84,7 @@ process LDPRUNE{
     script:
     """
     vars=\$(mktemp)
-    awk -F '\t' '{ print \$1 }' ${tissue_eqtl_path} | tail -n +2 | sort -u > \$vars
+    awk -F '[ \t]+' '{ print \$1 }' ${tissue_eqtl_path} | tail -n +2 | sort -u > \$vars
     
     plink2 --indep-pairwise 500 0.5 --pfile ${params.pfile}  --extract \$vars --out ${tissue_eqtl_id}
     rm \$vars
@@ -172,5 +173,39 @@ process DIRECTIONSCORE{
     script:
     """
     python3 ${projectDir}/bin/scores.py --genotypes ${clean_genotype} --effects ${snp_gene_eqtls} --method 'directional' --output "${tissue_eqtl_id}.tsv"
+    """
+}
+
+process DIRECTIONCOUNT{
+    cpus 1
+    memory 4.GB
+    publishDir params.outdir + '/directional_allele_counts_scores'
+    
+    input:
+    tuple val(tissue_eqtl_id), path(clean_genotype, name: "genotype_input.*"), path(snp_gene_eqtls, name: "effect_input.*")
+    
+    output:
+    tuple val(tissue_eqtl_id), path("${tissue_eqtl_id}.tsv")
+    
+    script:
+    """
+    python3 ${projectDir}/bin/scores.py --genotypes ${clean_genotype} --effects ${snp_gene_eqtls} --method 'directional_count' --output "${tissue_eqtl_id}.tsv"
+    """
+}
+
+process PC1SCORE{
+    cpus 1
+    memory 4.GB
+    publishDir params.outdir + '/pc1_scores'
+    
+    input:
+    tuple val(tissue_eqtl_id), path(clean_genotype, name: "genotype_input.*"), path(snp_gene_eqtls, name: "effect_input.*")
+    
+    output:
+    tuple val(tissue_eqtl_id), path("${tissue_eqtl_id}.tsv")
+    
+    script:
+    """
+    python3 ${projectDir}/bin/scores.py --genotypes ${clean_genotype} --effects ${snp_gene_eqtls} --method 'pc1' --output "${tissue_eqtl_id}.tsv"
     """
 }
