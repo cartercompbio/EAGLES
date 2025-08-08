@@ -19,6 +19,8 @@ def load_data(G_path, E_path):
     G = G[common_snps]
     E = E.loc[common_snps]
     
+    print(f"Using {len(common_snps)} SNPs for scoring.")
+    
     return G, E
 
 def matrix_mult_scoring(G, E):
@@ -151,7 +153,7 @@ if __name__ == "__main__":
     # Load data
     G_df, E_df = load_data(args.genotypes, args.effects)
 
-    print(f"Using {len(common_snps)} SNPs for scoring.")
+
 
     # Then proceed with scoring method selected
     if args.method == "matrixmult":
