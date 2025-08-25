@@ -1,5 +1,5 @@
 # EAGLE
-eQTLs Aggregated at Gene LEvel
+eQTLs Aggregated for Gene LEvel Scores
 
 ## Set up conda environment with necessary packages
 bioconda::nextflow 25.04.06\
