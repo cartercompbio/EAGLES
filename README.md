@@ -1,4 +1,4 @@
-# EAGLE
+# EAGLES
 eQTLs Aggregated for Gene LEvel Scores
 
 ## Set up conda environment with necessary packages
