@@ -1,8 +1,10 @@
 params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
 params.pfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2/tcga.common"
 params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
+params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
+params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
 
-params.outdir="/cellar/users/domeyer/work/fg"
+params.outdir="/cellar/shared/carterlab/projects/eagle/v0.2/test_out"
 
 
 params.MODE = "predixcan" //default MODE
@@ -10,17 +12,13 @@ params.MODE = "predixcan" //default MODE
 params.predixcan = [
     window: 1000000,
     threshold: 1,
-    features: "order",
-    ldWindow: "100kb",
-    ldR: 0.999
+    features: "order"
 ]
 
 params.magma = [
     window: 0,
     threshold: 0.999,
-    features: "pca",
-    ldWindow: "100kb",
-    ldR: 0.999
+    features: "pca"
 ]
 
 params.ldstrict = [
@@ -41,16 +39,19 @@ workflow {
     switch(params.MODE){
         case "predixcan":
             mode_params=params.predixcan
-            ld_mode = "ldnone"
+            mode_associated_ld = "ldnone"
             break
         case "magma":
             mode_params=params.magma
-            ld_mode = "ldnone"
+            mode_associated_ld = "ldnone"
             break
         default:
             def available_modes = ['predixcan', 'magma']
             error "Unknown MODE: '${params.MODE}'. Available modes: ${available_modes.join(', ')}"
     }
+    
+    // defaults to mode-associated ld parameters unless user specifies ld parameters
+    def ld_mode = params.LDMODE ?: mode_associated_ld
     
     switch(ld_mode){
         case "ldlax":
@@ -127,7 +128,7 @@ process GETSTARTSTOP{
 process GETLDFILTERVARS{
     cpus 1
     memory 16.GB
-    publishDir params.outdir + '/vars'
+    publishDir params.outdir + '/filtervars'
     
     input:
     tuple val(ensg), val(chrom), val(start), val(stop)
@@ -139,7 +140,22 @@ process GETLDFILTERVARS{
     
     script:
     """
-    plink2 --pfile ${params.pfile} --chr ${chrom} --from-bp ${start} --to-bp ${stop} --make-pgen --out "${ensg}_temp"
+    temp_file=\$(mktemp)
+    python ${projectDir}/bin/qtl_filter.py \
+        --qtl-folder ${gtexQTLfolder} \
+        --index-folder ${gtexQTLindexFolder} \
+        --gene ${ensg} \
+        --tis "Colon_Sigmoid" "Colon_Transverse" \
+        --output \$temp_file
+    
+    plink2 \
+        --pfile ${params.pfile} \
+        --chr ${chrom} \
+        --from-bp ${start} \
+        --to-bp ${stop} \
+        --extract \$temp_file \
+        --make-pgen \
+        --out "${ensg}_temp"
     
     vars=\$(mktemp)
     awk '!/^##/ && NR > 1 {print \$3}' "${ensg}_temp.pvar" > \$vars
@@ -170,9 +186,52 @@ process GETVARS{
     
     script:
     """
-    plink2 --pfile ${params.pfile} --chr ${chrom} --from-bp ${start} --to-bp ${stop} --make-pgen --out ${ensg}
+    temp_file=\$(mktemp)
+    python ${projectDir}/bin/qtl_filter.py \
+        --qtl-folder ${gtexQTLfolder} \
+        --index-folder ${gtexQTLindexFolder} \
+        --gene ${ensg} \
+        --tis "Colon_Sigmoid" "Colon_Transverse" \
+        --output \$temp_file
+    
+    plink2 \
+        --pfile ${params.pfile} \
+        --chr ${chrom} \
+        --from-bp ${start} \
+        --to-bp ${stop} \
+        --extract \$temp_file \
+        --make-pgen \
+        --out ${ensg}
+    
+    rm \$temp_file
     """
 }
+
+process LDPRUNE{
+    cpus 1
+    memory 16.GB
+    publishDir params.outdir + '/ldprune'
+    
+    input:
+    tuple val(ensg), path(pgen), path(pvar), path(psam)
+    val(window)
+    val(r2)
+    
+    output:
+    tuple val(ensg), path("*.prune.in")
+    
+    script:
+    """
+    plink2 --pfile ${params.pfile} --chr ${chrom} --from-bp ${start} --to-bp ${stop} --make-pgen --out "${ensg}_temp"
+    
+    vars=\$(mktemp)
+    awk '!/^##/ && NR > 1 {print \$3}' "${ensg}_temp.pvar" > \$vars
+    plink2 --indep-pairwise ${window} ${r2} --pfile ${params.europfile}  --extract \$vars --out ${ensg}
+        
+    rm \$vars
+    """
+}
+
 
 process GETFEATURES{
     cpus 1
