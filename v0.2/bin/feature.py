@@ -3,8 +3,7 @@
 import pandas as pd
 import numpy as np
 from pgenlib import PgenReader
-import os
-from sklearn.decomposition import PCA, NMF
+from sklearn.decomposition import PCA, FastICA as ICA
 import argparse
 
 def load_pgen_data(pgen_path, psam_path, pvar_path):
@@ -64,6 +63,15 @@ def pca_transform(g, thres = 0.999):
     pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
     return pc_df, pc_comp.loc[:, pc_df.columns]
 
+def ica_transform(g, m_iter = 1000):
+    ica = ICA(max_iter = m_iter)
+    ic_df = pd.DataFrame(ica.fit_transform(g), index = g.index)
+
+    ic_comp = pd.DataFrame(ica.components_, columns = g.columns, index = [f'IC{i}' for i in range(1,ica.components_.shape[0]+1)]).T
+
+    ic_df.columns = [f'IC{i}' for i in range(1,ic_df.shape[1]+1)]
+    return ic_df, ic_comp
+
 def max_std_transform(g):
     g_df = g.loc[:, g.std().sort_values(ascending = False).index].copy()
     g_df.columns.names = [None]
@@ -80,9 +88,8 @@ if __name__ == "__main__":
     parser.add_argument("--psam", required=True, help="Path to psam file")
     parser.add_argument("--pvar", required=True, help="Path to pvar file")
     
-    parser.add_argument("--method", choices=["pca"],
-                        default="directional", 
-                        help="Transformation method: 'pca', TBA...")
+    parser.add_argument("--method", choices=["pca", "ica"],
+                        help="Transformation method: 'pca', 'ica',TBA...")
     parser.add_argument("--thres", required = False, default = 0.999, help = "if using pca method, proportion of explained varianced to be retained")
     
     parser.add_argument("--output", required=True, help="Path to output gene scores file")
@@ -97,6 +104,8 @@ if __name__ == "__main__":
     # Then proceed with feature engineering method selected
     if args.method == "pca":
         result,loadings = pca_transform(genotype, args.thres)
+    elif args.method == "ica":
+        result,loadings = ica_transform(genotype)
     else:
         result = genotype
         loadings = pd.DataFrame([])
