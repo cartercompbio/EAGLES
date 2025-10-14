@@ -57,10 +57,12 @@ def load_pgen_data(pgen_path, psam_path, pvar_path):
 def pca_transform(g, thres = 0.999):
     pca = PCA()
     pc_df = pd.DataFrame(pca.fit_transform(g), index = g.index)
+    
+    pc_comp = pd.DataFrame(pca.components_, columns = g.columns, index = [f'PC{i}' for i in range(1,pca.components_.shape[0]+1)]).T
 
     pc_df = pc_df.loc[:, range((np.cumsum(pca.explained_variance_ratio_)<thres).sum())]
     pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
-    return pc_df
+    return pc_df, pc_comp.loc[:, pc_df.columns]
 
 def max_std_transform(g):
     g_df = g.loc[:, g.std().sort_values(ascending = False).index].copy()
@@ -78,9 +80,9 @@ if __name__ == "__main__":
     parser.add_argument("--psam", required=True, help="Path to psam file")
     parser.add_argument("--pvar", required=True, help="Path to pvar file")
     
-    parser.add_argument("--method", choices=["pca", "std", "order"],
+    parser.add_argument("--method", choices=["pca"],
                         default="directional", 
-                        help="Scoring method: 'matrixmult', 'directional', 'directional_count', 'pc1', TBA...")
+                        help="Transformation method: 'pca', TBA...")
     parser.add_argument("--thres", required = False, default = 0.999, help = "if using pca method, proportion of explained varianced to be retained")
     
     parser.add_argument("--output", required=True, help="Path to output gene scores file")
@@ -94,10 +96,10 @@ if __name__ == "__main__":
 
     # Then proceed with feature engineering method selected
     if args.method == "pca":
-        result = pca_transform(genotype, args.thres)
-    elif args.method == 'std':
-        result = max_std_transform(genotype)
-    elif args.method == 'order':
-        result = order_transform(genotype)
+        result,loadings = pca_transform(genotype, args.thres)
+    else:
+        result = genotype
+        loadings = pd.DataFrame([])
 
     result.to_csv(args.output, sep="\t")
+    loadings.to_csv(args.output.replace('.tsv', '_loadings.tsv'), sep = "\t")
