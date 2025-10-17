@@ -4,6 +4,8 @@ params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_e
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
 
+params.expres = "/cellar/users/nopopko/projects/eagles/model_testing/models"
+params.cov = "/cellar/users/nopopko/projects/eagles"
 params.outdir="/cellar/shared/carterlab/projects/eagle/v0.2/test_out"
 
 
@@ -92,6 +94,13 @@ workflow {
                 
     features = GETFEATURES(variants, mode_params.features, mode_params.threshold)
     
+    fitmodel_input = features.map { tuple(ensg, features_path) ->
+        def expr_path = file("${params.expres}/expression_only_${ensg}.csv")
+        def covar_path = file("${params.cov}/covariates_test.csv")
+        tuple(ensg, features_path, expr_path, covar_path, params.MODE)
+    }
+
+    fitmodels = FITMODEL(fitmodel_input)    
 }
 
 process GETSTARTSTOP{
@@ -268,7 +277,7 @@ process FITMODEL{
     
     script:
     """
-    python ${projectDir}/bin/fit_model.py --features ${features} --expression ${expression} --covariates ${covariates} --model ${model_type} --gene ${ensg} --output ${ensg}.pkl
+    python ${projectDir}/bin/fit_model.py --features ${features} --expression ${expression} --covariates ${covariates} --model ${model} --gene ${ensg} --output ${ensg}.pkl
     """
     //model would specify which model to use
     // e.g. rf/xgb/ridge/elasticnet...
