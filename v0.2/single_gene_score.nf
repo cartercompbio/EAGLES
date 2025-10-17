@@ -268,7 +268,7 @@ process FITMODEL{
     
     script:
     """
-    python <script #1> --features ${features} --expression ${expression} --covariates ${covariates} --model <model> --output ${ensg}.pkl
+    python ${projectDir}/bin/fit_model.py --features ${features} --expression ${expression} --covariates ${covariates} --model ${model_type} --gene ${ensg} --output ${ensg}.pkl
     """
     //model would specify which model to use
     // e.g. rf/xgb/ridge/elasticnet...
