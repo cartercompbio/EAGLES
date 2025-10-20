@@ -88,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--psam", required=True, help="Path to psam file")
     parser.add_argument("--pvar", required=True, help="Path to pvar file")
     
-    parser.add_argument("--method", choices=["pca", "ica"],
+    parser.add_argument("--method",
                         help="Transformation method: 'pca', 'ica',TBA...")
     parser.add_argument("--thres", required = False, default = 0.999, help = "if using pca method, proportion of explained varianced to be retained")
     
