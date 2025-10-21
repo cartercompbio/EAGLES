@@ -1,0 +1,17 @@
+[project]
+name = "EAGLES"
+authors = ["noa-popko <nopopko@ucsd.edu>"]
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.13.*"
+scipy = "*"
+pandas = "*"
+numpy = "*"
+scikit-learn = "*"
+nextflow = "*"
+plink2 = "*"
+
+[tasks]
+run = "nextflow run single_gene_score.nf"
