@@ -2,7 +2,7 @@
 eQTLs Aggregated for Gene LEvel Scores
 
 ## Set up pixi
-1. Install Pixi
+1. Install Pixi (if not already installed)
 ```bash
 pip install pixi
 ```
