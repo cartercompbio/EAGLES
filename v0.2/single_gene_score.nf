@@ -3,22 +3,25 @@ params.pfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2/tcga.
 params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
+params.expressionfolder = "/cellar/users/domeyer/data/tcga/expr_cn_by_ensg/expression"
+params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
 
 params.outdir="/cellar/shared/carterlab/projects/eagle/v0.2/test_out"
-
 
 params.MODE = "predixcan" //default MODE
 
 params.predixcan = [
     window: 1000000,
     threshold: 1,
-    features: "order"
+    features: "order",
+    model: "elasticnet"
 ]
 
 params.magma = [
     window: 0,
     threshold: 0.999,
-    features: "pca"
+    features: "pca",
+    model: "elasticnet"
 ]
 
 params.ldstrict = [
@@ -34,6 +37,7 @@ params.ldlax = [
     ldR: 0.8
 ]
 params.ldnone = [:]
+
 
 workflow {
     switch(params.MODE){
@@ -78,7 +82,7 @@ workflow {
             tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
         }
         
-        .take(5) // for testing purposes
+        .take(10) // for testing purposes
         
     genes = GETSTARTSTOP(ginfo, mode_params.window)
     
@@ -91,8 +95,26 @@ workflow {
     }
                 
     features = GETFEATURES(variants, mode_params.features, mode_params.threshold)
-    
+
+    // feed in mode_params.model as the model type
+    fitmodels = features.map { ensg, feats_path, loadings_path ->
+        def expression_path = file("${params.expressionfolder}/${ensg}.tsv")
+        tuple(ensg, feats_path, expression_path, mode_params.model)
+    }
+
+    models = FITMODEL(fitmodels)
+
+    model_scores = models
+        .join(features)
+        .map { ensg, model_path, feats_path, loadings_path ->
+            tuple(ensg, feats_path, model_path)
+        }
+        .set { score_inputs }
+
+    scores = MODELSCORE(score_inputs)
 }
+
+
 
 process GETSTARTSTOP{
     cpus 1
@@ -243,11 +265,11 @@ process GETFEATURES{
     val(thres)
     
     output:
-    tuple val(ensg), path("*.tsv")
+    tuple val(ensg), path("${ensg}_feats.tsv"), path("${ensg}_loadings.tsv")
     
     script:
     """
-    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output ${ensg}.tsv
+    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output ${ensg}_feats.tsv
     """
 
 }
@@ -258,22 +280,26 @@ process FITMODEL{
     publishDir params.outdir + '/models'
     
     input:
-    tuple val(ensg), path(features), path(expression)
-    path(covariates)
-    val(model)
+    tuple val(ensg), path(features), path(expression), val(model_type)
     
     output:
     tuple val(ensg), path("*.pkl")
     
     script:
     """
-    python ${projectDir}/bin/fit_model.py --features ${features} --expression ${expression} --covariates ${covariates} --model ${model_type} --gene ${ensg} --output ${ensg}.pkl
+    python ${projectDir}/bin/fit_model.py \
+        --features ${features} \
+        --expression ${expression} \
+        --model ${model_type} \
+        --gene ${ensg} \
+        --output ${ensg}.pkl
     """
+    
     //model would specify which model to use
     // e.g. rf/xgb/ridge/elasticnet...
     //
     //script will need to 
-    //1. load data from features and covariates table (x)
+    //1. load data from features
     //2. load data from expression
     //3. fit a model of specified types
     //       -needs to support variety of common regression types
@@ -281,21 +307,23 @@ process FITMODEL{
     
 }
 
-process MODELSCORE{
+process MODELSCORE {
     cpus 1
     memory 16.GB
     publishDir params.outdir + '/scores'
     
     input:
     tuple val(ensg), path(features), path(model)
-    path(covariates)
     
     output:
-    tuple val(ensg), path("*.tsv")
+    tuple val(ensg), path("*_scores.tsv")
     
     script:
     """
-    python <script #2> --features ${features}  --covariates ${covariates} --model ${model} --output ${ensg}.tsv
+    python ${projectDir}/bin/model_score.py \
+        --features ${features} \
+        --model ${model} \
+        --output ${ensg}_scores.tsv
     """
     //model is computed from process FITMODEL
     //
