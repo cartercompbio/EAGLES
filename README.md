@@ -1,6 +1,24 @@
 # EAGLES
 eQTLs Aggregated for Gene LEvel Scores
 
+## Set up pixi
+1. Install Pixi
+```bash
+pip install pixi
+```
+2. Create environment from root of respository (where pixi.toml/.lock live)
+```bash
+pixi install
+```
+3. Activate the environment
+```bash
+pixi activate
+```
+4. Run the nextflow pipeline
+```bash
+pixi run score
+```
+
 ## Set up conda environment with necessary packages
 bioconda::nextflow 25.04.06\
 bioconda::plink2 2.0.0a.6.9\
