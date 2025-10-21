@@ -3,6 +3,7 @@
 import pickle
 import os
 from functools import reduce
+import argparse
 
 def index_gtex_file(filename, index_file):
     
@@ -114,7 +115,7 @@ def load_by_tis(gene, outfile, **kwargs):
     merged_set = reduce(func, snp_sets)
     
     with open(outfile, 'w') as outf:
-        outfile.write('\n'.join(merged_set))        
+        outf.write('\n'.join(merged_set))        
         
 if __name__ == "__main__":
 
@@ -128,4 +129,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load data
-    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder)
+    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list=args.tis)
