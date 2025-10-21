@@ -111,4 +111,4 @@ if __name__ == "__main__":
         loadings = pd.DataFrame([])
 
     result.to_csv(args.output, sep="\t")
-    loadings.to_csv(args.output.replace('.tsv', '_loadings.tsv'), sep = "\t")
+    loadings.to_csv(args.output.replace('_feats.tsv', '_loadings.tsv'), sep = "\t")
