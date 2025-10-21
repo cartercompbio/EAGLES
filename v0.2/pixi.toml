@@ -14,4 +14,4 @@ nextflow = "*"
 plink2 = "*"
 
 [tasks]
-run = "nextflow run single_gene_score.nf"
+score = "nextflow run single_gene_score.nf"
