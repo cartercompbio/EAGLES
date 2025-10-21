@@ -10,11 +10,7 @@ pip install pixi
 ```bash
 pixi install
 ```
-3. Activate the environment
-```bash
-pixi activate
-```
-4. Run the nextflow pipeline
+3. Run the nextflow pipeline
 ```bash
 pixi run score
 ```
