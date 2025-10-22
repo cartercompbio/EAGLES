@@ -2,9 +2,9 @@
 eQTLs Aggregated for Gene LEvel Scores
 
 ## Set up pixi
-1. Install Pixi (if not already installed)
+1. Install Pixi (if not already installed, see: https://pixi.sh/latest/installation/)
 ```bash
-pip install pixi
+curl -fsSL https://pixi.sh/install.sh | sh
 ```
 2. Create environment from root of respository (where pixi.toml/.lock live)
 ```bash
@@ -13,6 +13,12 @@ pixi install
 3. Run the nextflow pipeline
 ```bash
 pixi run score
+```
+
+## to replace 2+3 probably
+2. Get pixi .lock and .toml, and nf script from github repo; .lock and .toml must be in same folder
+```bash
+pixi exec --manifest-path /path/to/pixi.toml nextflow run /nfpath/to/script.nf
 ```
 
 ## Set up conda environment with necessary packages
