@@ -100,7 +100,6 @@ if __name__ == "__main__":
     genotype = load_pgen_data(args.pgen, args.psam, args.pvar)
 
 
-
     # Then proceed with feature engineering method selected
     if args.method == "pca":
         result,loadings = pca_transform(genotype, args.thres)
@@ -110,5 +109,5 @@ if __name__ == "__main__":
         result = genotype
         loadings = pd.DataFrame([])
 
-    result.to_csv(args.output, sep="\t")
-    loadings.to_csv(args.output.replace('_feats.tsv', '_loadings.tsv'), sep = "\t")
+    result.to_csv(args.output.replace('.tsv', '_feats.tsv'), sep="\t")
+    loadings.to_csv(args.output.replace('.tsv', '_loadings.tsv'), sep = "\t")
