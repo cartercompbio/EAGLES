@@ -1,22 +1,25 @@
+// GENERAL PARAMETERS
+params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
+params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
+params.gtexQTLfolder = "/cellar/users/domeyer/EAGLE/test_expr/qtls"
+params.gtexQTLindexFolder = "/cellar/users/domeyer/EAGLE/test_expr/qtls"
+
 // TCGA PARAMETERS
-//params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
 //params.pfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2/tcga.common"
-//params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
-//params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
-//params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
 //params.expressionfolder = "/cellar/users/domeyer/data/tcga/expr_cn_by_ensg/expression"
 //params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
 
 // GTEX PARAMETERS
-params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
-params.europfile = params.pfile
-params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
-params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
 params.expressionfolder = "/cellar/users/nopopko/projects/eagles/GTEx_expression"
 params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
 
-params.outdir="/cellar/shared/carterlab/projects/eagle/v0.2/test_out"
+
+
+// keep track of different runs and avoid overwriting
+def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
+params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${timestamp}"
+
 
 params.MODE = "predixcan" //default MODE
 
