@@ -14,14 +14,12 @@ params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTE
 params.expressionfolder = "/cellar/users/nopopko/projects/eagles/GTEx_expression"
 params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
 
-
+params.MODE = "predixcan" //default MODE
 
 // keep track of different runs and avoid overwriting
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
-params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${timestamp}"
+params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.MODE}_${timestamp}"
 
-
-params.MODE = "predixcan" //default MODE
 
 params.predixcan = [
     window: 1000000,
@@ -50,7 +48,6 @@ params.ldlax = [
     ldR: 0.8
 ]
 params.ldnone = [:]
-
 
 workflow {
     switch(params.MODE){
@@ -95,19 +92,26 @@ workflow {
             tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
         }
         
-        .take(5) // for testing purposes
+        //.take(100) // for testing purposes
         
     genes = GETSTARTSTOP(ginfo, mode_params.window)
     
+    pfile_renamed = RENAMEVARIANTS(params.pfile)
+    
     switch(ld_mode){
         case "ldnone":
-            variants = GETVARS(genes)
+            variants = GETVARS(genes, pfile_renamed)
             break
         default:
-            variants = GETLDFILTERVARS(genes, ld_params.ldWindow, ld_params.ldR)
+            variants = GETLDFILTERVARS(genes, pfile_renamed, ld_params.ldWindow, ld_params.ldR)
     }
+    
+    logs = variants.map{ ensg, pgen, pvar, psam, log -> log }.collect()
+    MERGELOGS(logs)
+    variants_no_logs = variants.map{ ensg, pgen, pvar, psam, log -> [ensg, pgen, pvar, psam] }
+
                 
-    features = GETFEATURES(variants, mode_params.features, mode_params.threshold)
+    features = GETFEATURES(variants_no_logs, mode_params.features, mode_params.threshold)
 
     // feed in mode_params.model as the model type
     fitmodels = features.map { ensg, feats_path, loadings_path ->
@@ -127,6 +131,27 @@ workflow {
     scores = MODELSCORE(score_inputs)
 }
 
+process RENAMEVARIANTS{
+    cpus 1
+    memory 16.GB
+    
+    input:
+    val pfile_prefix
+    
+    output:
+    tuple path("*.pgen"), path("*.pvar"), path("*.psam")
+    
+    script:
+    def basename = new File(pfile_prefix).name
+    """
+    plink2 \\
+        --pfile ${pfile_prefix} \\
+        --set-all-var-ids @:#:\\\$r:\\\$a \\
+        --make-pgen \\
+        --new-id-max-allele-len 1000 \\
+        --out ${basename}_renamed
+    """
+}
 
 
 process GETSTARTSTOP{
@@ -161,12 +186,14 @@ process GETSTARTSTOP{
 }
 
 process GETLDFILTERVARS{
+//update with the changes made to GETVARS
     cpus 1
     memory 16.GB
     publishDir params.outdir + '/filtervars'
     
     input:
     tuple val(ensg), val(chrom), val(start), val(stop)
+    path(pfile_renamed)
     val(window)
     val(r2)
     
@@ -184,11 +211,12 @@ process GETLDFILTERVARS{
         --output \$temp_file
     
     plink2 \
-        --pfile ${params.pfile} \
+        --pfile ${pfile_renamed} \
         --chr ${chrom} \
         --from-bp ${start} \
         --to-bp ${stop} \
         --extract \$temp_file \
+        --force-intersect \
         --make-pgen \
         --out "${ensg}_temp"
     
@@ -212,32 +240,66 @@ process GETVARS{
     cpus 1
     memory 16.GB
     publishDir params.outdir + '/vars'
+    errorStrategy 'ignore'
     
     input:
     tuple val(ensg), val(chrom), val(start), val(stop)
+    tuple path(pgen), path(pvar), path(psam)
     
     output:
-    tuple val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam")
+    tuple val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam"), path("*_failed.log")
     
     script:
     """
-    temp_file=\$(mktemp)
+    #!/bin/bash
+    
+    handle_error() {
+        echo "error with GETVARS for ${ensg}" > ${ensg}_failed.log
+        exit 1
+    }
+    
+    # Set trap to catch errors
+    # log genes with errors but do not emit values from this process
+    trap 'handle_error' ERR
+    set -e
+    
+    # Create log file
+    touch ${ensg}_failed.log
+    
+    touch "temp.txt"
     python ${projectDir}/bin/qtl_filter.py \
         --qtl-folder ${params.gtexQTLfolder} \
         --index-folder ${params.gtexQTLindexFolder} \
         --gene ${ensg} \
-        --tis "Colon_Sigmoid" "Colon_Transverse" \
-        --output \$temp_file
+        --tis "pantissue_no_blood_brain" \
+        --output "temp.txt"
     
     plink2 \
-        --pfile ${params.pfile} \
+        --pfile ${pgen.baseName} \
         --chr ${chrom} \
         --from-bp ${start} \
         --to-bp ${stop} \
+        --extract "temp.txt" \
+        --force-intersect \
         --make-pgen \
         --out ${ensg}
     
-    rm \$temp_file
+    #rm \$temp_file    
+    """
+}
+
+process MERGELOGS {
+    publishDir params.outdir + '/err', mode: 'copy'
+    
+    input:
+    path logs
+    
+    output:
+    path "combined.log"
+    
+    script:
+    """
+    cat ${logs} > combined.log
     """
 }
 
@@ -282,7 +344,7 @@ process GETFEATURES{
     
     script:
     """
-    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output ${ensg}_feats.tsv
+    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output ${ensg}.tsv
     """
 
 }
