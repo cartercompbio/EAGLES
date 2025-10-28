@@ -105,14 +105,9 @@ workflow {
         default:
             variants = GETLDFILTERVARS(genes, pfile_renamed, ld_params.ldWindow, ld_params.ldR)
     }
-    
-    logs = variants.map{ ensg, pgen, pvar, psam, log -> log }.collect()
-    MERGELOGS(logs)
-    variants_no_logs = variants.map{ ensg, pgen, pvar, psam, log -> [ensg, pgen, pvar, psam] }
-
                 
-    features = GETFEATURES(variants_no_logs, mode_params.features, mode_params.threshold)
-
+    features = GETFEATURES(variants, mode_params.features, mode_params.threshold)
+    
     // feed in mode_params.model as the model type
     fitmodels = features.map { ensg, feats_path, loadings_path ->
         def expression_path = file("${params.expressionfolder}/${ensg}.tsv")
@@ -186,14 +181,14 @@ process GETSTARTSTOP{
 }
 
 process GETLDFILTERVARS{
-//update with the changes made to GETVARS
     cpus 1
     memory 16.GB
     publishDir params.outdir + '/filtervars'
+    errorStrategy 'ignore'
     
     input:
     tuple val(ensg), val(chrom), val(start), val(stop)
-    path(pfile_renamed)
+    tuple path(pgen), path(pvar), path(psam)
     val(window)
     val(r2)
     
@@ -202,24 +197,35 @@ process GETLDFILTERVARS{
     
     script:
     """
-    temp_file=\$(mktemp)
+    #!/bin/bash
+    
+    handle_error() {
+        exit 1
+    }
+    
+    # Set trap to catch errors
+    # log genes with errors but do not emit values from this process
+    trap 'handle_error' ERR
+    set -e
+    
+    touch "temp.txt"
     python ${projectDir}/bin/qtl_filter.py \
         --qtl-folder ${params.gtexQTLfolder} \
         --index-folder ${params.gtexQTLindexFolder} \
         --gene ${ensg} \
-        --tis "Colon_Sigmoid" "Colon_Transverse" \
-        --output \$temp_file
+        --tis "pantissue_no_blood_brain" \
+        --output "temp.txt"
     
     plink2 \
-        --pfile ${pfile_renamed} \
+        --pfile ${pgen.baseName} \
         --chr ${chrom} \
         --from-bp ${start} \
         --to-bp ${stop} \
-        --extract \$temp_file \
+        --extract "temp.txt" \
         --force-intersect \
         --make-pgen \
         --out "${ensg}_temp"
-    
+
     vars=\$(mktemp)
     awk '!/^##/ && NR > 1 {print \$3}' "${ensg}_temp.pvar" > \$vars
     plink2 --indep-pairwise ${window} ${r2} --pfile ${params.europfile}  --extract \$vars --out ${ensg}
@@ -232,7 +238,7 @@ process GETLDFILTERVARS{
     rm "${ensg}_temp.pgen"
     rm "${ensg}_temp.psam"
     rm "${ensg}_temp.log"
-
+    
     """
 }
 
@@ -247,14 +253,13 @@ process GETVARS{
     tuple path(pgen), path(pvar), path(psam)
     
     output:
-    tuple val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam"), path("*_failed.log")
+    tuple val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam")
     
     script:
     """
     #!/bin/bash
     
     handle_error() {
-        echo "error with GETVARS for ${ensg}" > ${ensg}_failed.log
         exit 1
     }
     
@@ -262,9 +267,6 @@ process GETVARS{
     # log genes with errors but do not emit values from this process
     trap 'handle_error' ERR
     set -e
-    
-    # Create log file
-    touch ${ensg}_failed.log
     
     touch "temp.txt"
     python ${projectDir}/bin/qtl_filter.py \
@@ -284,22 +286,7 @@ process GETVARS{
         --make-pgen \
         --out ${ensg}
     
-    #rm \$temp_file    
-    """
-}
-
-process MERGELOGS {
-    publishDir params.outdir + '/err', mode: 'copy'
-    
-    input:
-    path logs
-    
-    output:
-    path "combined.log"
-    
-    script:
-    """
-    cat ${logs} > combined.log
+    rm temp.txt    
     """
 }
 
@@ -353,6 +340,7 @@ process FITMODEL{
     cpus 1
     memory 16.GB
     publishDir params.outdir + '/models'
+    errorStrategy 'ignore'
     
     input:
     tuple val(ensg), path(features), path(expression), val(model_type)
@@ -362,6 +350,17 @@ process FITMODEL{
     
     script:
     """
+    #!/bin/bash
+    
+    handle_error() {
+        exit 1
+    }
+    
+    # Set trap to catch errors
+    # log genes with errors but do not emit values from this process
+    trap 'handle_error' ERR
+    set -e
+    
     python ${projectDir}/bin/fit_model.py \
         --features ${features} \
         --expression ${expression} \
@@ -369,16 +368,6 @@ process FITMODEL{
         --gene ${ensg} \
         --output ${ensg}.pkl
     """
-    
-    //model would specify which model to use
-    // e.g. rf/xgb/ridge/elasticnet...
-    //
-    //script will need to 
-    //1. load data from features
-    //2. load data from expression
-    //3. fit a model of specified types
-    //       -needs to support variety of common regression types
-    //4. output model as pickel (.pkl) file
     
 }
 
@@ -400,10 +389,4 @@ process MODELSCORE {
         --model ${model} \
         --output ${ensg}_scores.tsv
     """
-    //model is computed from process FITMODEL
-    //
-    //script will need to
-    //1. load model from pkl file
-    //2. compute score for each sample in features
-    //       -might involve covariate values?
 }
