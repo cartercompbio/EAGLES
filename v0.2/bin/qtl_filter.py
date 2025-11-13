@@ -2,8 +2,8 @@
 
 import pickle
 import os
-from functools import reduce
 import argparse
+from functools import reduce
 
 def index_gtex_file(filename, index_file):
     
@@ -114,8 +114,9 @@ def load_by_tis(gene, outfile, **kwargs):
     snp_sets = [set(load_by_id(f'{qtl_folder}/{t}.tsv', f'{index_folder}/{t}.pkl', gene)) for t in tis_list]
     merged_set = reduce(func, snp_sets)
     
-    with open(outfile, 'w') as outf:
-        outf.write('\n'.join(merged_set))        
+    if len(merged_set)>0:
+        with open(outfile, 'w') as outfile:
+            outfile.write('\n'.join(merged_set))        
         
 if __name__ == "__main__":
 
@@ -129,4 +130,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load data
-    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list=args.tis)
+    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list = args.tis)
