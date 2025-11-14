@@ -1,8 +1,9 @@
 // GENERAL PARAMETERS
-params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
+//params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
+params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/clean_gene_info.tsv"
 params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
-params.gtexQTLfolder = "/cellar/users/domeyer/EAGLE/test_expr/qtls"
-params.gtexQTLindexFolder = "/cellar/users/domeyer/EAGLE/test_expr/qtls"
+params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
+params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
 
 // TCGA PARAMETERS
 //params.pfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2/tcga.common"
@@ -11,7 +12,7 @@ params.gtexQTLindexFolder = "/cellar/users/domeyer/EAGLE/test_expr/qtls"
 
 // GTEX PARAMETERS
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
-params.expressionfolder = "/cellar/users/nopopko/projects/eagles/GTEx_expression"
+params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
 params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
 
 params.MODE = "predixcan" //default MODE
@@ -84,6 +85,20 @@ workflow {
             def available_modes = ['ldlax', 'ldmed','ldstrict','ldnone']
             error "Unknown LD Mode: '${ld_mode}'. Available modes: ${available_modes.join(', ')}"
     }
+    
+    pfile_renamed = RENAMEVARIANTS(params.pfile)
+
+    tissue_names = Channel
+        .fromPath("${params.gtexQTLfolder}/*.tsv")
+        .map { file -> file.baseName }  // Extract tissue name (remove .tsv)
+        .filter { tissue ->
+            // Check if corresponding .pkl file exists
+            def pkl_file = new File("${params.gtexQTLindexFolder}/${tissue}.pkl")
+            def expr_dir = new File("${params.expressionfolder}/${tissue}")
+
+            // Only keep if both exist
+            pkl_file.exists() && expr_dir.exists()
+        }
 
     ginfo = Channel
         .fromPath(params.geneInfo)
@@ -91,37 +106,42 @@ workflow {
         .map { row -> 
             tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
         }
+        .take(1000) //for testing
         
-        //.take(100) // for testing purposes
+    genes = GETSTARTSTOP(ginfo, mode_params.window) //genes: [val(ensg), val(chrom), val(start), val(end)]
+    
+    tissue_gene_ch = tissue_names.combine(genes) //[tis, ensg, chrom, start, end]
+        .filter { tis,ensg,chrom,start,end ->
+            def expr_file = new File("${params.expressionfolder}/${tis}/${ensg}.tsv")
+            expr_file.exists()
+        }
         
-    genes = GETSTARTSTOP(ginfo, mode_params.window)
-    
-    pfile_renamed = RENAMEVARIANTS(params.pfile)
-    
+        
     switch(ld_mode){
         case "ldnone":
-            variants = GETVARS(genes, pfile_renamed)
+            variants = GETVARS(tissue_gene_ch, pfile_renamed)
             break
         default:
-            variants = GETLDFILTERVARS(genes, pfile_renamed, ld_params.ldWindow, ld_params.ldR)
+            variants = GETLDFILTERVARS(tissue_gene_ch, pfile_renamed, ld_params.ldWindow, ld_params.ldR)  //TODO: test this or remove it as option
     }
-                
-    features = GETFEATURES(variants, mode_params.features, mode_params.threshold)
     
-    // feed in mode_params.model as the model type
-    fitmodels = features.map { ensg, feats_path, loadings_path ->
-        def expression_path = file("${params.expressionfolder}/${ensg}.tsv")
-        tuple(ensg, feats_path, expression_path, mode_params.model)
+    //variants: [tis, ensg, pgen, pvar, psam]
+    features = GETFEATURES(variants, mode_params.features, mode_params.threshold) // features: [tis, ensg, feats_path, loadings_path]
+    
+    features_for_model = features
+    .map{tis,ensg,feat_path,loading_path ->
+        def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
+        [tis, ensg, feat_path, expression_path, mode_params.model]
     }
-
-    models = FITMODEL(fitmodels)
-
-    model_scores = models
-        .join(features)
-        .map { ensg, model_path, feats_path, loadings_path ->
-            tuple(ensg, feats_path, model_path)
-        }
-        .set { score_inputs }
+    
+    features_for_score = features
+    .map{tis,ensg,feat_path,loading_path ->
+        [tis, ensg, feat_path]
+    }    
+    
+    models = FITMODEL(features_for_model)
+    
+    score_inputs = models.join(features_for_score, by: [0,1])
 
     scores = MODELSCORE(score_inputs)
 }
@@ -178,6 +198,49 @@ process GETSTARTSTOP{
     if (start<0){
         start = 0
     }
+}
+
+
+// only works if variants are named like "<chr>:<pos>:<ref>:<alt>"
+// qtl_filter uses the above format to filter variants such that start <= pos <= stop
+// for rsid or other naming schemes that don't use ":" this will lead to errors
+process GETVARS{
+    cpus 1
+    memory 16.GB
+    publishDir params.outdir + '/vars'
+    errorStrategy 'ignore'
+    
+    input:
+    tuple val(tis), val(ensg), val(chrom), val(start), val(stop)
+    tuple path(pgen), path(pvar), path(psam)
+    
+    output:
+    tuple val(tis), val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam"), optional: true
+    
+    script:
+    """
+    python ${projectDir}/bin/qtl_filter.py \
+        --qtl-folder ${params.gtexQTLfolder} \
+        --index-folder ${params.gtexQTLindexFolder} \
+        --gene ${ensg} \
+        --tis ${tis} \
+        --range ${start} ${stop} \
+        --output "temp.txt"
+    
+    if [ -s "temp.txt" ]; then
+        plink2 \
+            --pfile ${pgen.baseName} \
+            --chr ${chrom} \
+            --from-bp ${start} \
+            --to-bp ${stop} \
+            --extract "temp.txt" \
+            --force-intersect \
+            --make-pgen \
+            --out "${tis}_${ensg}"
+    else
+        echo "temp.txt does not exist or is empty"
+    fi
+    """
 }
 
 process GETLDFILTERVARS{
@@ -242,53 +305,7 @@ process GETLDFILTERVARS{
     """
 }
 
-process GETVARS{
-    cpus 1
-    memory 16.GB
-    publishDir params.outdir + '/vars'
-    errorStrategy 'ignore'
-    
-    input:
-    tuple val(ensg), val(chrom), val(start), val(stop)
-    tuple path(pgen), path(pvar), path(psam)
-    
-    output:
-    tuple val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam")
-    
-    script:
-    """
-    #!/bin/bash
-    
-    handle_error() {
-        exit 1
-    }
-    
-    # Set trap to catch errors
-    # log genes with errors but do not emit values from this process
-    trap 'handle_error' ERR
-    set -e
-    
-    touch "temp.txt"
-    python ${projectDir}/bin/qtl_filter.py \
-        --qtl-folder ${params.gtexQTLfolder} \
-        --index-folder ${params.gtexQTLindexFolder} \
-        --gene ${ensg} \
-        --tis "pantissue_no_blood_brain" \
-        --output "temp.txt"
-    
-    plink2 \
-        --pfile ${pgen.baseName} \
-        --chr ${chrom} \
-        --from-bp ${start} \
-        --to-bp ${stop} \
-        --extract "temp.txt" \
-        --force-intersect \
-        --make-pgen \
-        --out ${ensg}
-    
-    rm temp.txt    
-    """
-}
+
 
 process LDPRUNE{
     cpus 1
@@ -322,16 +339,16 @@ process GETFEATURES{
     publishDir params.outdir + '/features'
     
     input:
-    tuple val(ensg), path(pgen), path(pvar), path(psam)
+    tuple val(tis), val(ensg), path(pgen), path(pvar), path(psam)
     val(mode)
     val(thres)
     
     output:
-    tuple val(ensg), path("${ensg}_feats.tsv"), path("${ensg}_loadings.tsv")
+    tuple val(tis), val(ensg), path("${tis}_${ensg}_feats.tsv"), path("${tis}_${ensg}_loadings.tsv")
     
     script:
     """
-    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output ${ensg}.tsv
+    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output "${tis}_${ensg}.tsv"
     """
 
 }
@@ -343,10 +360,10 @@ process FITMODEL{
     errorStrategy 'ignore'
     
     input:
-    tuple val(ensg), path(features), path(expression), val(model_type)
-    
+    tuple val(tis), val(ensg), path(features), path(expression), val(model_type)
+
     output:
-    tuple val(ensg), path("*.pkl")
+    tuple val(tis), val(ensg), path("*.pkl")
     
     script:
     """
@@ -366,7 +383,7 @@ process FITMODEL{
         --expression ${expression} \
         --model ${model_type} \
         --gene ${ensg} \
-        --output ${ensg}.pkl
+        --output "${tis}_${ensg}.pkl"
     """
     
 }
@@ -377,7 +394,7 @@ process MODELSCORE {
     publishDir params.outdir + '/scores'
     
     input:
-    tuple val(ensg), path(features), path(model)
+    tuple val(tis), val(ensg), path(model), path(features)
     
     output:
     tuple val(ensg), path("*_scores.tsv")
@@ -387,6 +404,6 @@ process MODELSCORE {
     python ${projectDir}/bin/model_score.py \
         --features ${features} \
         --model ${model} \
-        --output ${ensg}_scores.tsv
+        --output "${tis}_${ensg}_scores.tsv"
     """
 }
