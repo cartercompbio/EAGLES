@@ -2,58 +2,65 @@ import pandas as pd
 import joblib
 import argparse
 
+def load_covariates(path):
+    cov = pd.read_csv(path, sep="\t")
+    if "#IID" in cov.columns:
+        cov = cov.rename(columns={"#IID": "IID"})
+    cov = cov.set_index("IID")
+    cov.index = cov.index.astype(str).str.strip()
+    return cov
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--covariates", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
-    # Print to stdout for Nextflow logs
-    print(">>> Running model_score.py for", args.output, flush=True)
+    # Load features
+    X = pd.read_csv(args.features, sep="\t", index_col=0)
 
-    debug_messages = []
+    # Load covariates
+    cov = pd.read_csv(args.covariates, sep="\t")
+    if "#IID" in cov.columns:
+        cov = cov.rename(columns={"#IID": "IID"})
+    cov = cov.set_index("IID")
+    cov.index = cov.index.astype(str).str.strip()
 
-    try:
-        debug_messages.append(f"Loading features from: {args.features}")
-        X = pd.read_csv(args.features, sep="\t", index_col=0)
-        debug_messages.append(f"Features shape: {X.shape}")
+    # Align features and covariates
+    common_samples = X.index.intersection(cov.index)
+    X = X.loc[common_samples]
+    cov = cov.loc[common_samples]
 
-        debug_messages.append(f"Loading model from: {args.model}")
-        model_dict = joblib.load(args.model)
-        scaler = model_dict["scaler"]
-        model = model_dict["model"]
-        feature_names = model_dict["feature_names"]
-        debug_messages.append(f"Model features: {feature_names}")
+    # Concatenate covariates
+    X = pd.concat([X, cov], axis=1)
 
-        missing = set(feature_names) - set(X.columns)
-        if missing:
-            raise ValueError(f"Missing features in input data: {missing}")
+    # Load model
+    model_dict = joblib.load(args.model)
+    scaler = model_dict["scaler"]
+    model = model_dict["model"]
+    feature_names = model_dict["feature_names"]
 
-        X_ordered = X[feature_names]
-        debug_messages.append(f"Ordered features shape: {X_ordered.shape}")
+    # Ensure all features used in the model are present
+    missing = set(feature_names) - set(X.columns)
+    if missing:
+        raise ValueError(f"Missing features in input data: {missing}")
 
-        X_scaled = scaler.transform(X_ordered)
-        debug_messages.append(f"Scaled features shape: {X_scaled.shape}")
+    # Order columns according to model
+    X_ordered = X[feature_names]
 
-        y_pred = model.predict(X_scaled)
-        debug_messages.append(f"Predicted values shape: {y_pred.shape}")
+    # Scale and predict
+    X_scaled = scaler.transform(X_ordered)
+    y_pred = model.predict(X_scaled)
 
-        output_df = pd.DataFrame({
-            "sample_id": X.index,
-            "predicted_expression": y_pred
-        }).set_index("sample_id")
+    # Save output
+    output_df = pd.DataFrame({
+        "sample_id": X.index,
+        "predicted_expression": y_pred
+    }).set_index("sample_id")
+    output_df.to_csv(args.output, sep="\t")
 
-        output_df.to_csv(args.output, sep="\t")
-        debug_messages.append(f"Saved predicted scores to: {args.output}")
-
-    except Exception as e:
-        debug_messages.append(f"Error: {e}")
-
-    debug_file = args.output + ".debug.txt"
-    with open(debug_file, "w") as f:
-        for msg in debug_messages:
-            f.write(msg + "\n")
 
 if __name__ == "__main__":
     main()
