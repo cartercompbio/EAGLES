@@ -14,8 +14,10 @@ def clean_gene_id(gene_id):
 
 def load_data(features_path, expression_path):
     X = pd.read_csv(features_path, sep="\t", index_col=0)
-    
+    X.index = X.index.astype(str).str.strip()
     y = pd.read_csv(expression_path, sep="\t", index_col=0)
+    y.index = y.index.astype(str).str.strip()
+    
     if y.shape[1] == 1:
         y = y.iloc[:, 0]
 
@@ -24,6 +26,14 @@ def load_data(features_path, expression_path):
     y = y.loc[common_samples]
 
     return X, y
+
+def load_covariates(path):
+    cov = pd.read_csv(path, sep="\t")
+    if "#IID" in cov.columns:
+        cov = cov.rename(columns={"#IID": "IID"})
+    cov = cov.set_index("IID")
+    cov.index = cov.index.astype(str).str.strip()
+    return cov
 
 def fit_model(X, y, model_type="elasticnet"):
     scaler = StandardScaler()
@@ -54,6 +64,7 @@ def main():
     parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
+    parser.add_argument("--covariates", required=True, help="Top 10 PCs for samples")
 
     args = parser.parse_args()
     args.gene = clean_gene_id(args.gene)
@@ -66,6 +77,15 @@ def main():
         if args.gene not in y_all.columns:
             raise ValueError(f"Gene {args.gene} not found in expression file.")
         y = y_all[args.gene]
+
+    cov = load_covariates(args.covariates)
+    
+    common = X.index.intersection(cov.index)
+    X = X.loc[common]
+    y = y.loc[common]
+    cov = cov.loc[common]
+
+    X = pd.concat([X, cov], axis=1)
 
     model = fit_model(X, y, args.model)
     joblib.dump(model, args.output)
