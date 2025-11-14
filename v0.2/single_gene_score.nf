@@ -13,7 +13,7 @@ params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_
 // GTEX PARAMETERS
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
 params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
-params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
+params.covariates  = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/gtex.eigenvec"
 
 params.MODE = "predixcan" //default MODE
 
@@ -99,6 +99,7 @@ workflow {
             // Only keep if both exist
             pkl_file.exists() && expr_dir.exists()
         }
+        .take(5) // Limit to 5 tissues for now
 
     ginfo = Channel
         .fromPath(params.geneInfo)
@@ -106,7 +107,7 @@ workflow {
         .map { row -> 
             tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
         }
-        .take(1000) //for testing
+        .take(10) // Limit to 10 genes for now
         
     genes = GETSTARTSTOP(ginfo, mode_params.window) //genes: [val(ensg), val(chrom), val(start), val(end)]
     
@@ -131,17 +132,26 @@ workflow {
     features_for_model = features
     .map{tis,ensg,feat_path,loading_path ->
         def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
-        [tis, ensg, feat_path, expression_path, mode_params.model]
+        def covariate_path = file(params.covariates)
+        [tis, ensg, feat_path, expression_path, covariate_path, mode_params.model]
     }
-    
+
     features_for_score = features
     .map{tis,ensg,feat_path,loading_path ->
-        [tis, ensg, feat_path]
-    }    
+        def model_path = file("${params.outdir}/models/${tis}_${ensg}.pkl")
+        def covariate_path = file(params.covariates)
+        [tis, ensg, model_path, feat_path, covariate_path]
+    }
+
     
     models = FITMODEL(features_for_model)
     
-    score_inputs = models.join(features_for_score, by: [0,1])
+    score_inputs = models.map { tis, ensg, model_path ->
+        def covariates_path = file(params.covariates)
+        def feats_path = file("${params.outdir}/features/${tis}_${ensg}_feats.tsv")
+        tuple(tis, ensg, model_path, covariates_path, feats_path)
+    }
+
 
     scores = MODELSCORE(score_inputs)
 }
@@ -360,7 +370,7 @@ process FITMODEL{
     errorStrategy 'ignore'
     
     input:
-    tuple val(tis), val(ensg), path(features), path(expression), val(model_type)
+    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), val(model_type)
 
     output:
     tuple val(tis), val(ensg), path("*.pkl")
@@ -381,9 +391,10 @@ process FITMODEL{
     python ${projectDir}/bin/fit_model.py \
         --features ${features} \
         --expression ${expression} \
+        --covariates ${covariates} \
         --model ${model_type} \
         --gene ${ensg} \
-        --output "${tis}_${ensg}.pkl"
+        --output "${tis}_${ensg}_${task.hash}.pkl"
     """
     
 }
@@ -394,7 +405,7 @@ process MODELSCORE {
     publishDir params.outdir + '/scores'
     
     input:
-    tuple val(tis), val(ensg), path(model), path(features)
+    tuple val(tis), val(ensg), path(model), path(covariates), path(features)
     
     output:
     tuple val(ensg), path("*_scores.tsv")
@@ -403,6 +414,7 @@ process MODELSCORE {
     """
     python ${projectDir}/bin/model_score.py \
         --features ${features} \
+        --covariates ${covariates} \
         --model ${model} \
         --output "${tis}_${ensg}_scores.tsv"
     """
