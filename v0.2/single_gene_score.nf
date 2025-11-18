@@ -28,7 +28,12 @@ params.predixcan = [
     features: "order",
     model: "elasticnet" // can change
 ]
-
+params.predixcanRF = [
+    window: 1000000,
+    threshold: 1,
+    features: "order",
+    model: "rf"
+]
 params.magma = [
     window: 0,
     threshold: 0.999,
