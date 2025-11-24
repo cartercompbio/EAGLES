@@ -14,6 +14,7 @@ params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
 params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
 params.covariates  = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/gtex.eigenvec"
+params.train = "/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
 
 params.MODE = "predixcan" //default MODE
 
@@ -399,6 +400,7 @@ process FITMODEL{
         --covariates ${covariates} \
         --model ${model_type} \
         --gene ${ensg} \
+        --samples ${params.train} \ 
         --output "${tis}_${ensg}_${task.hash}.pkl"
     """
     
