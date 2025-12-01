@@ -369,6 +369,59 @@ process GETFEATURES{
 
 }
 
+process GETVARFEATURES{
+    cpus 1
+    memory 16.GB
+    publishDir params.outdir + '/features'
+    errorStrategy 'ignore'
+    
+    input:
+    tuple val(tis), val(ensg), val(chrom), val(start), val(stop)
+    tuple path(pgen), path(pvar), path(psam)
+    val(mode)
+    val(thres)
+    
+    output:
+    tuple val(tis), val(ensg), path("${tis}_${ensg}_feats.tsv"), path("${tis}_${ensg}_loadings.tsv"), optional: true
+    
+    script:
+    """
+    
+    python ${projectDir}/bin/qtl_filter.py \
+        --qtl-folder ${params.gtexQTLfolder} \
+        --index-folder ${params.gtexQTLindexFolder} \
+        --gene ${ensg} \
+        --tis ${tis} \
+        --output "temp.txt"
+    
+    if [ -s "temp.txt" ]; then
+        plink2 \
+            --pfile ${pgen.baseName} \
+            --chr ${chrom} \
+            --from-bp ${start} \
+            --to-bp ${stop} \
+            --extract "temp.txt" \
+            --force-intersect \
+            --make-pgen \
+            --out "${tis}_${ensg}"
+            
+        if [ -s "${tis}_${ensg}.pvar" ]; then
+            python ${projectDir}/bin/feature.py \
+                --pgen "${tis}_${ensg}.pgen" \
+                --psam "${tis}_${ensg}.psam" \
+                --pvar "${tis}_${ensg}.pvar" \
+                --method ${mode} \
+                --thres ${thres} \
+                --output "${tis}_${ensg}"
+        else
+            echo "no variants"
+        fi
+    else
+        echo "temp.txt does not exist or is empty"
+    fi
+    """
+}
+
 process FITMODEL{
     cpus 1
     memory 16.GB
