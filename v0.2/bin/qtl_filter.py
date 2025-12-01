@@ -105,14 +105,6 @@ def load_by_tis(gene, outfile, **kwargs):
     except:
         col_name = 'SNP'
         
-    try:
-        var_min,var_max = kwargs['snp_range']
-        var_min = int(var_min)
-        var_max = int(var_max)
-    except:
-        var_min,var_max = None,None
-        
-        
     if merge_type == 'any':
         func = lambda a,b: a|b
     elif merge_type == 'all':
@@ -120,9 +112,6 @@ def load_by_tis(gene, outfile, **kwargs):
         
     snp_sets = [set(load_by_id(f'{qtl_folder}/{t}.tsv', f'{index_folder}/{t}.pkl', gene)) for t in tis_list]
     merged_set = reduce(func, snp_sets)
-    
-    if var_min is not None:
-        merged_set = [x for x in merged_set if var_min<=int(x.split(':')[1])<=var_max]
     
     if len(merged_set)>0:
         with open(outfile, 'w') as outfile:
@@ -135,10 +124,9 @@ if __name__ == "__main__":
     parser.add_argument("--index-folder", required=True, help="Path to qtl table index file")
     parser.add_argument("--gene", required=True, help="gene identifier for desired eQTLs")
     parser.add_argument("--tis", nargs='+', required=True, help="list of tissues to consider")
-    parser.add_argument("--range", nargs=2, required=False, help = "min and max variant position (inclusive)")
     parser.add_argument("--output", required=True, help="Path to output eqtl list")
 
     args = parser.parse_args()
 
     # Load data
-    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list = args.tis, snp_range = args.range)
+    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list = args.tis)
