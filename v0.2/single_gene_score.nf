@@ -566,18 +566,17 @@ process FITMODEL{
     
     script:
     """
-    
-    python ${projectDir}/bin/fit_model.py \
-        --features ${features} \
-        --expression ${expression} \
-        --covariates ${covariates} \
-        --model ${model_type} \
-        --gene ${ensg} \
-        --qtl ${qtl} \
-        --samples ${params.train} \ 
+    python ${projectDir}/bin/fit_model.py \\
+        --features ${features} \\
+        --expression ${expression} \\
+        --covariates ${covariates} \\
+        --model ${model_type} \\
+        --gene ${ensg} \\
+        --qtl ${qtl} \\
+        --samples ${params.train} \\
         --output "${tis}_${ensg}_${task.hash}.pkl"
-    """
-    
+        //--output "${tis}_${ensg}.pkl"
+    """ 
 }
 
 process MODELSCORE {
