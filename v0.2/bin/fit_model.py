@@ -97,7 +97,7 @@ def fit_PCR(X_scaled, y, scaler, thres):
     
     return snp_model
 
-def fit_model(X, y, model_type="elasticnet"):
+def fit_model(X, y, model_type, thres = 1):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
