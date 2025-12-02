@@ -127,6 +127,7 @@ workflow {
         .map { row -> 
             tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
         }
+        .join(heritable_gene)
         .take(10) // Limit to 10 genes for now
         
     genes = GETSTARTSTOP(ginfo, mode_params.window) //genes: [val(ensg), val(chrom), val(start), val(end)]
@@ -136,7 +137,17 @@ workflow {
             def expr_file = new File("${params.expressionfolder}/${tis}/${ensg}.tsv")
             expr_file.exists()
         }
-        
+
+    heritable_tis_gene = Channel
+        .fromPath(params.heritability)
+        .splitCsv(header: true, sep: '\t')
+        .map { row -> 
+            tuple(row.TISSUE, row.ENSG)
+        }
+    
+    filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])
+        .collate(100)
+        //.take(10)        
         
     switch(ld_mode){
         case "ldnone":
@@ -147,7 +158,45 @@ workflow {
     }
     
     //variants: [tis, ensg, pgen, pvar, psam]
-    features = GETFEATURES(variants, mode_params.features, mode_params.threshold) // features: [tis, ensg, feats_path, loadings_path]
+    //features = GETFEATURES(variants, mode_params.features, mode_params.threshold) // features: [tis, ensg, feats_path, loadings_path]
+    
+    //features = GETVARFEATURES(filtered_tis_gene_ch, pfile_renamed, mode_params.features, mode_params.threshold)
+    
+    feat_results = GETVARFEATURES_BATCH(
+        filtered_tis_gene_ch,
+        pfile_renamed,
+        mode_params.features,
+        mode_params.threshold
+    )
+    
+    // Transform the output into individual tuples [tis, ensg, feats_file, loadings_file]
+    features = feat_results
+        .map { feats_files, loadings_files ->
+            def pairs = []
+            feats_files.each { feats_file ->
+                // Extract basename by removing _feats.tsv suffix
+                def basename = feats_file.name.replaceAll('_feats\\.tsv$', '')
+
+                // Extract tis and ensg for the tuple
+                // Assuming format: tissue_ENSG... where ENSG marks the start of gene ID
+                def ensgMatch = (basename =~ /^(.+?)_(ENSG\d+.*)$/)
+                if (ensgMatch) {
+                    def tis = ensgMatch[0][1]
+                    def ensg = ensgMatch[0][2]
+
+                    // Find matching loadings file using basename
+                    def loadings_file = loadings_files.find { 
+                        it.name == "${basename}_loadings.tsv" 
+                    }
+
+                    if (loadings_file) {
+                        pairs << tuple(tis, ensg, feats_file, loadings_file)
+                    }
+                }
+            }
+            return pairs
+        }
+        .flatMap() 
     
     features_for_model = features
     .map{tis,ensg,feat_path,loading_path ->
@@ -157,21 +206,23 @@ workflow {
         [tis, ensg, feat_path, expression_path, covariate_path, qtl_path, mode_params.model]
     }
 
+    models = FITMODEL(features_for_model)
+
+    //TODO: add model path some other way
+    //maybe join with models?
     features_for_score = features
     .map{tis,ensg,feat_path,loading_path ->
         def model_path = file("${params.outdir}/models/${tis}_${ensg}.pkl")
         def covariate_path = file(params.covariates)
         [tis, ensg, model_path, feat_path, covariate_path]
-    }
-
-    
-    models = FITMODEL(features_for_model)
+    }      
     
     score_inputs = models.map { tis, ensg, model_path ->
         def covariates_path = file(params.covariates)
         def feats_path = file("${params.outdir}/features/${tis}_${ensg}_feats.tsv")
         tuple(tis, ensg, model_path, covariates_path, feats_path)
     }
+    //score_inputs = models.join(features_for_score, by: [0,1])
 
 
     scores = MODELSCORE(score_inputs)
