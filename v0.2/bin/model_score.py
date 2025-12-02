@@ -4,14 +4,6 @@ import joblib
 import argparse
 from fit_model import load_covariates
 
-#def load_covariates(path):
-#    cov = pd.read_csv(path, sep="\t")
-#    if "#IID" in cov.columns:
-#        cov = cov.rename(columns={"#IID": "IID"})
-#    cov = cov.set_index("IID")
-#    cov.index = cov.index.astype(str).str.strip()
-#    return cov
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True)
@@ -41,43 +33,26 @@ def main():
     # Load model
     model_dict = joblib.load(args.model)
 
-    # Hanlge flipped allele "score"
-    if "flip_mask" in model_dict:
-        # Only keep SNPs (ignore covariates)
-        snp_cols = model_dict["feature_names"]
-        X_snps = X[snp_cols].copy() 
-    
-        # Sum alleles per sample
-        y_pred = X_snps.sum(axis=1).astype(int)
-    
-        output_df = pd.DataFrame({
-            "sample_id": X_snps.index,
-            "flipped_allele_sum": y_pred
-        }).set_index("sample_id")
+    scaler = model_dict["scaler"]
+    model = model_dict["model"]
+    feature_names = model_dict["feature_names"]
 
+    # Ensure all features present
+    missing = set(feature_names) - set(X.columns)
+    if missing:
+        raise ValueError(f"Missing features in input data: {missing}")
 
-    # Normal ML models
-    else:
-        scaler = model_dict["scaler"]
-        model = model_dict["model"]
-        feature_names = model_dict["feature_names"]
+    # Order columns
+    X_ordered = X[feature_names]
 
-        # Ensure all features present
-        missing = set(feature_names) - set(X.columns)
-        if missing:
-            raise ValueError(f"Missing features in input data: {missing}")
+    # Scale and predict
+    X_scaled = scaler.transform(X_ordered)
+    y_pred = model.predict(X_scaled)
 
-        # Order columns
-        X_ordered = X[feature_names]
-
-        # Scale and predict
-        X_scaled = scaler.transform(X_ordered)
-        y_pred = model.predict(X_scaled)
-
-        output_df = pd.DataFrame({
-            "sample_id": X_ordered.index,
-            "predicted_expression": y_pred
-        }).set_index("sample_id")    
+    output_df = pd.DataFrame({
+        "sample_id": X_ordered.index,
+        "predicted_expression": y_pred
+    }).set_index("sample_id")    
     
     output_df.to_csv(args.output, sep="\t")
 
