@@ -4,6 +4,8 @@ params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/clean_gene_info.tsv"
 params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
+//params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_0_01.tsv"
+params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_no_predixcan_missing_snps.tsv"
 
 // TCGA PARAMETERS
 //params.pfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2/tcga.common"
@@ -21,7 +23,7 @@ params.MODE = "predixcan" //default MODE
 // keep track of different runs and avoid overwriting
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
 params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.MODE}_${timestamp}"
-
+//params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.MODE}_heritable_genes_${timestamp}"
 
 params.predixcan = [
     window: 1000000,
@@ -29,12 +31,14 @@ params.predixcan = [
     features: "order",
     model: "elasticnet" // can change
 ]
+
 params.predixcanRF = [
     window: 1000000,
     threshold: 1,
     features: "order",
     model: "rf"
 ]
+
 params.magma = [
     window: 0,
     threshold: 0.999,
