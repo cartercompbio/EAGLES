@@ -70,8 +70,12 @@ workflow {
             mode_params=params.magma
             mode_associated_ld = "ldnone"
             break
+        case "predixcanRF":
+        mode_params=params.predixcanRF
+            mode_associated_ld = "ldnone"
+            break
         default:
-            def available_modes = ['predixcan', 'magma']
+            def available_modes = ['predixcan', 'magma', 'predixcanRF']
             error "Unknown MODE: '${params.MODE}'. Available modes: ${available_modes.join(', ')}"
     }
     
@@ -109,7 +113,13 @@ workflow {
             // Only keep if both exist
             pkl_file.exists() && expr_dir.exists()
         }
-        .take(5) // Limit to 5 tissues for now
+
+    heritable_gene = Channel
+        .fromPath(params.heritability)
+        .splitCsv(header: true, sep: '\t')
+        .map { row -> 
+            row.ENSG
+        }
 
     ginfo = Channel
         .fromPath(params.geneInfo)
