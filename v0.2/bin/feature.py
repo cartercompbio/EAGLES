@@ -49,6 +49,7 @@ def load_pgen_data(pgen_path, psam_path, pvar_path):
         pgen_reader.read(variant_idx, buf)
         genotype_matrix[variant_idx, :] = buf
         
+    #genotype_matrix = 2 - pd.DataFrame(genotype_matrix, index = variants, columns = samples).T
     genotype_matrix = pd.DataFrame(genotype_matrix, index = variants, columns = samples).T
         
     return genotype_matrix
