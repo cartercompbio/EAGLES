@@ -2,15 +2,14 @@ import pandas as pd
 import numpy as np
 import joblib
 import argparse
-from fit_model import load_covariates
 
-#def load_covariates(path):
-#    cov = pd.read_csv(path, sep="\t")
-#    if "#IID" in cov.columns:
-#        cov = cov.rename(columns={"#IID": "IID"})
-#    cov = cov.set_index("IID")
-#    cov.index = cov.index.astype(str).str.strip()
-#    return cov
+def load_covariates(path):
+    cov = pd.read_csv(path, sep="\t")
+    if "#IID" in cov.columns:
+        cov = cov.rename(columns={"#IID": "IID"})
+    cov = cov.set_index("IID")
+    cov.index = cov.index.astype(str).str.strip()
+    return cov
 
 def main():
     parser = argparse.ArgumentParser()
