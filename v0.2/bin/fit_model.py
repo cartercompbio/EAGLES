@@ -12,16 +12,17 @@ def clean_gene_id(gene_id):
     gene_base = gene_base.split('_')[0]
     return gene_base
 
-def load_data(features_path, expression_path):
+def load_data(features_path, expression_path, samples = None):
     X = pd.read_csv(features_path, sep="\t", index_col=0)
-    X.index = X.index.astype(str).str.strip()
-    y = pd.read_csv(expression_path, sep="\t", index_col=0)
-    y.index = y.index.astype(str).str.strip()
     
+    y = pd.read_csv(expression_path, sep="\t", index_col=0)
     if y.shape[1] == 1:
         y = y.iloc[:, 0]
-
+        
     common_samples = y.index.intersection(X.index)
+    if samples is not None:
+        common_samples = list(set(common_samples)&samples)
+        
     X = X.loc[common_samples]
     y = y.loc[common_samples]
 
@@ -90,16 +91,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True, help="Path to features file (e.g. genotype data)")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
-    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb", "flipped"], default="elasticnet", help="Model type")
+    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
     parser.add_argument("--covariates", required=True, help="Top 10 PCs for samples")
-    parser.add_argument("--qtl", required=True, help="Path to QTL slope file")
+    parser.add_argument("--samples", required=True, help="training sample list, one per line")
 
     args = parser.parse_args()
     args.gene = clean_gene_id(args.gene)
 
-    X, y_all = load_data(args.features, args.expression)
+    samples = set(pd.read_csv(args.samples, header = None)[0])
+    X, y_all = load_data(args.features, args.expression, samples)
 
     if isinstance(y_all, pd.Series):
         y = y_all
