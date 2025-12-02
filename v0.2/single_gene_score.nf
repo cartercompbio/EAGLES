@@ -203,10 +203,10 @@ workflow {
         def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
         def covariate_path = file(params.covariates)
         def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
-        [tis, ensg, feat_path, expression_path, covariate_path, qtl_path, mode_params.model]
+        [tis, ensg, feat_path, expression_path, covariate_path, qtl_path]
     }
 
-    models = FITMODEL(features_for_model)
+    models = FITMODEL(features_for_model, mode_params.model, mode_params.threshold)
 
     //TODO: add model path some other way
     //maybe join with models?
@@ -553,7 +553,9 @@ process FITMODEL{
     errorStrategy 'ignore'
     
     input:
-    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl), val(model_type)
+    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl)
+    val(model_type)
+    val(thres)
 
     output:
     tuple val(tis), val(ensg), path("*.pkl")
@@ -568,6 +570,7 @@ process FITMODEL{
         --gene ${ensg} \\
         --qtl ${qtl} \\
         --samples ${params.train} \\
+        --thres ${thres}
         //--output "${tis}_${ensg}_${task.hash}.pkl"
         --output "${tis}_${ensg}.pkl"
     """ 
