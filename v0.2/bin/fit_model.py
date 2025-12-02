@@ -5,28 +5,8 @@ import argparse
 from sklearn.linear_model import ElasticNetCV, RidgeCV
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 import xgboost as xgb
-
-def clean_gene_id(gene_id):
-    gene_base = gene_id.split('.')[0]
-    gene_base = gene_base.split('_')[0]
-    return gene_base
-
-def load_data(features_path, expression_path, samples = None):
-    X = pd.read_csv(features_path, sep="\t", index_col=0)
-    
-    y = pd.read_csv(expression_path, sep="\t", index_col=0)
-    if y.shape[1] == 1:
-        y = y.iloc[:, 0]
-        
-    common_samples = y.index.intersection(X.index)
-    if samples is not None:
-        common_samples = list(set(common_samples)&samples)
-        
-    X = X.loc[common_samples]
-    y = y.loc[common_samples]
-
-    return X, y
 
 def load_covariates(path):
     cov = pd.read_csv(path, sep="\t")
@@ -65,6 +45,58 @@ def apply_flipping(X, qtl_df):
 
     return Xf, flip_mask
 
+def clean_gene_id(gene_id):
+    gene_base = gene_id.split('.')[0]
+    gene_base = gene_base.split('_')[0]
+    return gene_base
+
+def load_data(features_path, expression_path, samples = None):
+    X = pd.read_csv(features_path, sep="\t", index_col=0)
+    
+    y = pd.read_csv(expression_path, sep="\t", index_col=0)
+    if y.shape[1] == 1:
+        y = y.iloc[:, 0]
+        
+    common_samples = y.index.intersection(X.index)
+    if samples is not None:
+        common_samples = list(set(common_samples)&samples)
+        
+    X = X.loc[common_samples]
+    y = y.loc[common_samples]
+
+    return X, y
+
+def pca_transform(g, thres = 0.999):
+    pca = PCA()
+    pc_df = pd.DataFrame(pca.fit_transform(g), index = g.index)
+    
+    pc_comp = pd.DataFrame(pca.components_, columns = g.columns, index = [f'PC{i}' for i in range(1,pca.components_.shape[0]+1)]).T
+
+    pc_df = pc_df.loc[:, range((np.cumsum(pca.explained_variance_ratio_)<thres).sum())]
+    pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
+    return pc_df, pc_comp.loc[:, pc_df.columns]
+
+def fit_PCR(X_scaled, y, scaler, thres):
+    
+    pcs,loadings = pca_transform(pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_), thres)
+
+    pc_model = LinearRegression()
+    pc_model.fit(pcs, y_train)
+
+    pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_, pc_model.coef_)))
+    coef_scaled = loadings.dot(pc_weights)
+
+    coef_orig = coef_scaled / scaler.scale_
+    intercept_orig = (pc_model.intercept_ - 
+                         np.sum(coef_scaled * scaler.mean_ / scaler.scale_))
+
+    snp_model = LinearRegression()
+    snp_model.coef_ = coef_orig
+    snp_model.intercept_ = intercept_orig
+    snp_model.feature_names_in_ = scaler.feature_names_in_
+    
+    return snp_model
+
 def fit_model(X, y, model_type="elasticnet"):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -77,6 +109,10 @@ def fit_model(X, y, model_type="elasticnet"):
         model = RandomForestRegressor(n_estimators=100)
     elif model_type == "xgb":
         model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
+    elif model_type == "pcr":
+        return {"scaler":scaler, "model":fit_PCR(X_scaled, y, scaler, thres), "feature_names":X.columns.tolist()}
+    elif model_type == "flipallele":
+        #@noa: do something
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -91,15 +127,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True, help="Path to features file (e.g. genotype data)")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
-    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb"], default="elasticnet", help="Model type")
+    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
-    parser.add_argument("--covariates", required=True, help="Top 10 PCs for samples")
     parser.add_argument("--samples", required=True, help="training sample list, one per line")
+    parser.add_argument("--thres", required=False, help="for pcr regression, limits number of PCs", default = 1)
 
     args = parser.parse_args()
     args.gene = clean_gene_id(args.gene)
-
+    
     samples = set(pd.read_csv(args.samples, header = None)[0])
     X, y_all = load_data(args.features, args.expression, samples)
 
@@ -110,32 +146,7 @@ def main():
             raise ValueError(f"Gene {args.gene} not found in expression file.")
         y = y_all[args.gene]
 
-    cov = load_covariates(args.covariates)
-    
-    common = X.index.intersection(cov.index)
-    X = X.loc[common]
-    y = y.loc[common]
-    cov = cov.loc[common]
-
-    X = pd.concat([X, cov], axis=1)
-
-    # flipped model scenario
-    if args.model == "flipped":
-        qtl_df = load_qtl_table(args.qtl, args.gene)
-        Xf, flip_mask = apply_flipping(X, qtl_df)
-
-        model = {
-            "feature_names": Xf.columns.tolist(),
-            "flip_mask": flip_mask,
-            "gene": args.gene,
-        }
-
-        joblib.dump(model, args.output)
-        print(f"Model saved to: {args.output}")
-        return        
-
-    # normal ML model scenario
-    model = fit_model(X, y, args.model)
+    model = fit_model(X, y, args.model, args.thres)
     joblib.dump(model, args.output)
     print(f"Model saved to: {args.output}")
 
