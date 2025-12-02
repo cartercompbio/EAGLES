@@ -592,10 +592,10 @@ process MODELSCORE {
     
     script:
     """
-    python ${projectDir}/bin/model_score.py \
-        --features ${features} \
-        --covariates ${covariates} \
-        --model ${model} \
+    python ${projectDir}/bin/model_score.py \\
+        --features ${features} \\
+        --covariates ${covariates} \\
+        --model ${model} \\
         --output "${tis}_${ensg}_scores.tsv"
     """
 }
