@@ -11,10 +11,10 @@ from sklearn.decomposition import PCA
 import xgboost as xgb
 
 def load_covariates(path):
-    cov = pd.read_csv(path, sep="\t")
-    if "#IID" in cov.columns:
-        cov = cov.rename(columns={"#IID": "IID"})
-    cov = cov.set_index("IID")
+    cov = pd.read_csv(path, sep="\t", index_col = 0)
+    #if "#IID" in cov.columns:
+    #    cov = cov.rename(columns={"#IID": "IID"})
+    #cov = cov.set_index("IID")
     cov.index = cov.index.astype(str).str.strip()
     return cov
 
