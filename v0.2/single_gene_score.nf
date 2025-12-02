@@ -420,7 +420,7 @@ process GETFEATURES{
     
     script:
     """
-    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output "${tis}_${ensg}.tsv"
+    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output "${tis}_${ensg}"
     """
 
 }
