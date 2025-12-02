@@ -83,7 +83,7 @@ def fit_PCR(X_scaled, y, scaler, thres):
     pcs,loadings = pca_transform(pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_), thres)
 
     pc_model = LinearRegression()
-    pc_model.fit(pcs, y_train)
+    pc_model.fit(pcs, y)
 
     pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_, pc_model.coef_)))
     coef_scaled = loadings.dot(pc_weights)
@@ -99,7 +99,7 @@ def fit_PCR(X_scaled, y, scaler, thres):
     
     return snp_model
 
-def fit_model(X, y, model_type, thres = 1):
+def fit_model(X, y, model_type, thres = 1, qtl_df=None, gene_id=None):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
@@ -114,7 +114,15 @@ def fit_model(X, y, model_type, thres = 1):
     elif model_type == "pcr":
         return {"scaler":scaler, "model":fit_PCR(X_scaled, y, scaler, thres), "feature_names":X.columns.tolist()}
     elif model_type == "flipallele":
-        #@noa: do something
+        if qtl_df is None:
+            raise ValueError("flipallele model requires --qtl input")
+        X_snps = X[[c for c in X.columns if c in qtl_df.index]].copy()
+        Xf, flip_mask = apply_flipping(X_snps, qtl_df)
+        return {
+            "feature_names": X_snps.columns.tolist(),
+            "flip_mask": flip_mask,
+            "gene": gene_id
+        }
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -134,6 +142,7 @@ def main():
     parser.add_argument("--gene", required=True, help="Gene ID to model")
     parser.add_argument("--samples", required=True, help="training sample list, one per line")
     parser.add_argument("--thres", required=False, help="for pcr regression, limits number of PCs", default = 1)
+    parser.add_argument("--qtl", required=False, help="Path to QTL slope file")
 
     args = parser.parse_args()
     args.gene = clean_gene_id(args.gene)
@@ -148,7 +157,10 @@ def main():
             raise ValueError(f"Gene {args.gene} not found in expression file.")
         y = y_all[args.gene]
 
-    model = fit_model(X, y, args.model, args.thres)
+    # load QTL table for flipped option
+    qtl_df = load_qtl_table(args.qtl, args.gene) if args.model == "flipallele" else None
+
+    model = fit_model(X, y, args.model, args.thres, qtl_df=qtl_df, gene_id=args.gene)
     joblib.dump(model, args.output)
     print(f"Model saved to: {args.output}")
 
