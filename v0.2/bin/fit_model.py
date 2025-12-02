@@ -12,17 +12,16 @@ def clean_gene_id(gene_id):
     gene_base = gene_base.split('_')[0]
     return gene_base
 
-def load_data(features_path, expression_path, samples = None):
+def load_data(features_path, expression_path):
     X = pd.read_csv(features_path, sep="\t", index_col=0)
-    
+    X.index = X.index.astype(str).str.strip()
     y = pd.read_csv(expression_path, sep="\t", index_col=0)
+    y.index = y.index.astype(str).str.strip()
+    
     if y.shape[1] == 1:
         y = y.iloc[:, 0]
-        
+
     common_samples = y.index.intersection(X.index)
-    if samples is not None:
-        common_samples = list(set(common_samples)&samples)
-        
     X = X.loc[common_samples]
     y = y.loc[common_samples]
 
@@ -35,6 +34,35 @@ def load_covariates(path):
     cov = cov.set_index("IID")
     cov.index = cov.index.astype(str).str.strip()
     return cov
+
+def load_qtl_table(path, gene_id):
+    df = pd.read_csv(path, sep="\t")
+
+    df["ENSG_clean"] = df["ENSG"].str.replace(r"\.\d+$", "", regex=True)
+    df = df[df["ENSG_clean"] == gene_id]
+
+    df = df[["SNP", "slope"]].set_index("SNP")
+    return df
+
+def apply_flipping(X, qtl_df):
+    flip_mask = {}
+
+    common_snps = X.columns.intersection(qtl_df.index)
+    Xf = X.copy()
+
+    for snp in common_snps:
+        slope = qtl_df.loc[snp, "slope"]
+        if slope < 0:
+            Xf[snp] = 2 - Xf[snp]
+            flip_mask[snp] = True
+        else:
+            flip_mask[snp] = False
+
+    for snp in X.columns:
+        if snp not in flip_mask:
+            flip_mask[snp] = False
+
+    return Xf, flip_mask
 
 def fit_model(X, y, model_type="elasticnet"):
     scaler = StandardScaler()
@@ -62,17 +90,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True, help="Path to features file (e.g. genotype data)")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
-    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb"], default="elasticnet", help="Model type")
+    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb", "flipped"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
     parser.add_argument("--covariates", required=True, help="Top 10 PCs for samples")
-    parser.add_argument("--samples", required=True, help="training sample list, one per line")
+    parser.add_argument("--qtl", required=True, help="Path to QTL slope file")
 
     args = parser.parse_args()
     args.gene = clean_gene_id(args.gene)
 
-    samples = set(pd.read_csv(args.samples, header = None)[0])
-    X, y_all = load_data(args.features, args.expression, samples)
+    X, y_all = load_data(args.features, args.expression)
 
     if isinstance(y_all, pd.Series):
         y = y_all
@@ -90,6 +117,22 @@ def main():
 
     X = pd.concat([X, cov], axis=1)
 
+    # flipped model scenario
+    if args.model == "flipped":
+        qtl_df = load_qtl_table(args.qtl, args.gene)
+        Xf, flip_mask = apply_flipping(X, qtl_df)
+
+        model = {
+            "feature_names": Xf.columns.tolist(),
+            "flip_mask": flip_mask,
+            "gene": args.gene,
+        }
+
+        joblib.dump(model, args.output)
+        print(f"Model saved to: {args.output}")
+        return        
+
+    # normal ML model scenario
     model = fit_model(X, y, args.model)
     joblib.dump(model, args.output)
     print(f"Model saved to: {args.output}")
