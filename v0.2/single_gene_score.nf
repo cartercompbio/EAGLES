@@ -139,7 +139,8 @@ workflow {
     .map{tis,ensg,feat_path,loading_path ->
         def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
         def covariate_path = file(params.covariates)
-        [tis, ensg, feat_path, expression_path, covariate_path, mode_params.model]
+        def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
+        [tis, ensg, feat_path, expression_path, covariate_path, qtl_path, mode_params.model]
     }
 
     features_for_score = features
@@ -429,7 +430,7 @@ process FITMODEL{
     errorStrategy 'ignore'
     
     input:
-    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), val(model_type)
+    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl), val(model_type)
 
     output:
     tuple val(tis), val(ensg), path("*.pkl")
@@ -453,6 +454,7 @@ process FITMODEL{
         --covariates ${covariates} \
         --model ${model_type} \
         --gene ${ensg} \
+        --qtl ${qtl} \
         --samples ${params.train} \ 
         --output "${tis}_${ensg}_${task.hash}.pkl"
     """
