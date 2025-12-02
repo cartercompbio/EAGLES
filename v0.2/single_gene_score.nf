@@ -282,10 +282,6 @@ process GETSTARTSTOP{
     }
 }
 
-
-// only works if variants are named like "<chr>:<pos>:<ref>:<alt>"
-// qtl_filter uses the above format to filter variants such that start <= pos <= stop
-// for rsid or other naming schemes that don't use ":" this will lead to errors
 process GETVARS{
     cpus 1
     memory 16.GB
@@ -301,12 +297,12 @@ process GETVARS{
     
     script:
     """
+    
     python ${projectDir}/bin/qtl_filter.py \
         --qtl-folder ${params.gtexQTLfolder} \
         --index-folder ${params.gtexQTLindexFolder} \
         --gene ${ensg} \
         --tis ${tis} \
-        --range ${start} ${stop} \
         --output "temp.txt"
     
     if [ -s "temp.txt" ]; then
@@ -485,6 +481,74 @@ process GETVARFEATURES{
     else
         echo "temp.txt does not exist or is empty"
     fi
+    """
+}
+
+process GETVARFEATURES_BATCH {
+    cpus 4
+    memory 32.GB
+    publishDir params.outdir + '/features'
+    errorStrategy 'ignore'
+    
+    input:
+    val(batch)  // List of tuples: [(tis, ensg, chrom, start, stop), ...]
+    tuple path(pgen), path(pvar), path(psam)
+    val(mode)
+    val(thres)
+    
+    output:
+    tuple path("*_feats.tsv"), path("*_loadings.tsv"), optional: true
+    
+    script:
+    """
+    #!/bin/bash
+    
+    # Process each item in the batch
+    cat << 'EOF' > batch_items.txt
+${batch.collect { tis, ensg, chrom, start, stop -> "${tis}\t${ensg}\t${chrom}\t${start}\t${stop}" }.join('\n')}
+EOF
+
+    while IFS=\$'\\t' read -r tis ensg chrom start stop; do
+        echo "Processing \${tis} - \${ensg}"
+        
+        python ${projectDir}/bin/qtl_filter.py \\
+            --qtl-folder ${params.gtexQTLfolder} \\
+            --index-folder ${params.gtexQTLindexFolder} \\
+            --gene "\${ensg}" \\
+            --tis "\${tis}" \\
+            --output "temp_\${tis}_\${ensg}.txt"
+        
+        if [ -s "temp_\${tis}_\${ensg}.txt" ]; then
+            plink2 \\
+                --pfile ${pgen.baseName} \\
+                --chr "\${chrom}" \\
+                --from-bp "\${start}" \\
+                --to-bp "\${stop}" \\
+                --extract "temp_\${tis}_\${ensg}.txt" \\
+                --force-intersect \\
+                --make-pgen \\
+                --out "\${tis}_\${ensg}"
+                
+            if [ -s "\${tis}_\${ensg}.pvar" ]; then
+                python ${projectDir}/bin/feature.py \\
+                    --pgen "\${tis}_\${ensg}.pgen" \\
+                    --psam "\${tis}_\${ensg}.psam" \\
+                    --pvar "\${tis}_\${ensg}.pvar" \\
+                    --method ${mode} \\
+                    --thres ${thres} \\
+                    --output "\${tis}_\${ensg}"
+            else
+                echo "No variants for \${tis}_\${ensg}"
+            fi
+        else
+            echo "temp_\${tis}_\${ensg}.txt does not exist or is empty"
+        fi
+        
+        # Clean up intermediate files
+        rm -f temp_\${tis}_\${ensg}.txt
+        rm -f \${tis}_\${ensg}.pgen \${tis}_\${ensg}.pvar \${tis}_\${ensg}.psam
+        
+    done < batch_items.txt
     """
 }
 
