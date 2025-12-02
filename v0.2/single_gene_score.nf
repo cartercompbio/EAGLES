@@ -149,13 +149,13 @@ workflow {
         .collate(100)
         //.take(10)        
         
-    switch(ld_mode){
-        case "ldnone":
-            variants = GETVARS(tissue_gene_ch, pfile_renamed)
-            break
-        default:
-            variants = GETLDFILTERVARS(tissue_gene_ch, pfile_renamed, ld_params.ldWindow, ld_params.ldR)  //TODO: test this or remove it as option
-    }
+    //switch(ld_mode){
+    //    case "ldnone":
+    //        variants = GETVARS(tissue_gene_ch, pfile_renamed)
+    //        break
+    //    default:
+    //        variants = GETLDFILTERVARS(tissue_gene_ch, pfile_renamed, ld_params.ldWindow, ld_params.ldR)  //TODO: test this or remove it as option
+    //}
     
     //variants: [tis, ensg, pgen, pvar, psam]
     //features = GETFEATURES(variants, mode_params.features, mode_params.threshold) // features: [tis, ensg, feats_path, loadings_path]
@@ -210,22 +210,16 @@ workflow {
 
     //TODO: add model path some other way
     //maybe join with models?
-    features_for_score = features
-    .map{tis,ensg,feat_path,loading_path ->
-        def model_path = file("${params.outdir}/models/${tis}_${ensg}.pkl")
-        def covariate_path = file(params.covariates)
-        [tis, ensg, model_path, feat_path, covariate_path]
-    }      
+    //features: [tis, ensg, feat_path, loading_path]
+    //models: [tis, ensg, model]
     
-    score_inputs = models.map { tis, ensg, model_path ->
-        def covariates_path = file(params.covariates)
-        def feats_path = file("${params.outdir}/features/${tis}_${ensg}_feats.tsv")
-        tuple(tis, ensg, model_path, covariates_path, feats_path)
-    }
-    //score_inputs = models.join(features_for_score, by: [0,1])
-
-
-    scores = MODELSCORE(score_inputs)
+    features_for_score = features
+        .join(models, by: [0,1])
+        .map{tis,ensg,feat_path,loading_path, model_path ->
+        def covariate_path = file(params.covariates)
+        [tis, ensg, model_path, covariate_path, feat_path]
+    } 
+    scores = MODELSCORE(features_for_score)
 }
 
 process RENAMEVARIANTS{
@@ -574,8 +568,8 @@ process FITMODEL{
         --gene ${ensg} \\
         --qtl ${qtl} \\
         --samples ${params.train} \\
-        --output "${tis}_${ensg}_${task.hash}.pkl"
-        //--output "${tis}_${ensg}.pkl"
+        //--output "${tis}_${ensg}_${task.hash}.pkl"
+        --output "${tis}_${ensg}.pkl"
     """ 
 }
 
