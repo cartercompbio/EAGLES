@@ -39,6 +39,13 @@ params.predixcanRF = [
     model: "rf"
 ]
 
+params.flipAllele = [
+    window: 1000000,
+    threshold: 1,
+    features: "order",
+    model: "flipallele"
+]
+
 params.magma = [
     window: 0,
     threshold: 0.999,
@@ -71,11 +78,16 @@ workflow {
             mode_associated_ld = "ldnone"
             break
         case "predixcanRF":
-        mode_params=params.predixcanRF
-            mode_associated_ld = "ldnone"
+            mode_params=params.predixcanRF
+            mode_associated_ld = "ldmed"
             break
+        case "flipAllele":
+            mode_params = params.flipAllele
+            mode_associated_ld = "ldmed"
+            break
+            
         default:
-            def available_modes = ['predixcan', 'magma', 'predixcanRF']
+            def available_modes = ['predixcan', 'magma', 'predixcanRF', 'flipAllele']
             error "Unknown MODE: '${params.MODE}'. Available modes: ${available_modes.join(', ')}"
     }
     
