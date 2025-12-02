@@ -554,7 +554,7 @@ EOF
 
 process FITMODEL{
     cpus 1
-    memory 16.GB
+    memory 32.GB
     publishDir params.outdir + '/models'
     errorStrategy 'ignore'
     
@@ -566,16 +566,6 @@ process FITMODEL{
     
     script:
     """
-    #!/bin/bash
-    
-    handle_error() {
-        exit 1
-    }
-    
-    # Set trap to catch errors
-    # log genes with errors but do not emit values from this process
-    trap 'handle_error' ERR
-    set -e
     
     python ${projectDir}/bin/fit_model.py \
         --features ${features} \
