@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import joblib
 import argparse
 
@@ -38,27 +39,45 @@ def main():
 
     # Load model
     model_dict = joblib.load(args.model)
-    scaler = model_dict["scaler"]
-    model = model_dict["model"]
-    feature_names = model_dict["feature_names"]
 
-    # Ensure all features used in the model are present
-    missing = set(feature_names) - set(X.columns)
-    if missing:
-        raise ValueError(f"Missing features in input data: {missing}")
+    # Hanlge flipped allele "score"
+    if "flip_mask" in model_dict:
+        # Only keep SNPs (ignore covariates)
+        snp_cols = model_dict["feature_names"]
+        X_snps = X[snp_cols].copy() 
+    
+        # Sum alleles per sample
+        y_pred = X_snps.sum(axis=1).astype(int)
+    
+        output_df = pd.DataFrame({
+            "sample_id": X_snps.index,
+            "flipped_allele_sum": y_pred
+        }).set_index("sample_id")
 
-    # Order columns according to model
-    X_ordered = X[feature_names]
 
-    # Scale and predict
-    X_scaled = scaler.transform(X_ordered)
-    y_pred = model.predict(X_scaled)
+    # Normal ML models
+    else:
+        scaler = model_dict["scaler"]
+        model = model_dict["model"]
+        feature_names = model_dict["feature_names"]
 
-    # Save output
-    output_df = pd.DataFrame({
-        "sample_id": X.index,
-        "predicted_expression": y_pred
-    }).set_index("sample_id")
+        # Ensure all features present
+        missing = set(feature_names) - set(X.columns)
+        if missing:
+            raise ValueError(f"Missing features in input data: {missing}")
+
+        # Order columns
+        X_ordered = X[feature_names]
+
+        # Scale and predict
+        X_scaled = scaler.transform(X_ordered)
+        y_pred = model.predict(X_scaled)
+
+        output_df = pd.DataFrame({
+            "sample_id": X_ordered.index,
+            "predicted_expression": y_pred
+        }).set_index("sample_id")    
+    
     output_df.to_csv(args.output, sep="\t")
 
 
