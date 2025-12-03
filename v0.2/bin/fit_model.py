@@ -31,21 +31,22 @@ def apply_flipping(X, qtl_df):
     flip_mask = {}
 
     common_snps = X.columns.intersection(qtl_df.index)
-    Xf = X.copy()
+    #Xf = X.copy()
 
     for snp in common_snps:
         slope = qtl_df.loc[snp, "slope"]
         if slope < 0:
-            Xf[snp] = 2 - Xf[snp]
+            #Xf[snp] = 2 - Xf[snp]
             flip_mask[snp] = True
         else:
             flip_mask[snp] = False
 
-    for snp in X.columns:
-        if snp not in flip_mask:
-            flip_mask[snp] = False
+    #for snp in X.columns:
+    #    if snp not in flip_mask:
+    #        flip_mask[snp] = False
 
-    return Xf, flip_mask
+    #return Xf, flip_mask
+    return flip_mask
 
 def clean_gene_id(gene_id):
     gene_base = gene_id.split('.')[0]
@@ -117,7 +118,8 @@ def fit_model(X, y, model_type, thres = 1, qtl_df=None, gene_id=None):
         if qtl_df is None:
             raise ValueError("flipallele model requires --qtl input")
         X_snps = X[[c for c in X.columns if c in qtl_df.index]].copy()
-        Xf, flip_mask = apply_flipping(X_snps, qtl_df)
+        #Xf, flip_mask = apply_flipping(X_snps, qtl_df)
+        flip_mask = apply_flipping(X_snps, qtl_df)
         return {
             "feature_names": X_snps.columns.tolist(),
             "flip_mask": flip_mask,
