@@ -608,3 +608,32 @@ process MODELSCORE {
         --output "${tis}_${ensg}_scores.tsv"
     """
 }
+
+process FIT_AND_SCORE {
+    cpus 2
+    memory 32.GB
+    publishDir params.outdir + '/scores'
+
+    input:
+    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl)
+    val(model_type)
+    val(thres)
+
+    output:
+    tuple val(tis), val(ensg), path("*_scores.tsv")
+    tuple val(tis), val(ensg), path("*.pkl"), optional: true  // in order to still save model
+
+    script:
+    """
+    python ${projectDir}/bin/fit_and_score.py \
+        --features ${features} \
+        --expression ${expression} \
+        --covariates ${covariates} \
+        --model ${model_type} \
+        --gene ${ensg} \
+        --qtl ${qtl} \
+        --samples ${params.train} \
+        --thres ${thres} \
+        --out-prefix "${tis}_${ensg}"
+    """
+}
