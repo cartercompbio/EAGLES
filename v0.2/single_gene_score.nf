@@ -1,7 +1,8 @@
 // GENERAL PARAMETERS
 //params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
 params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/clean_gene_info.tsv"
-params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
+//params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
+params.europfile = "/cellar/users/domeyer/EAGLE/test_expr/ld_reference/GTEx.qc_passed.EUR"
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
 //params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_0_01.tsv"
@@ -18,40 +19,55 @@ params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
 params.covariates  = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/gtex.eigenvec"
 params.train = "/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
 
-params.MODE = "predixcan" //default MODE
+params.mode = "predixcan" //default MODE
 
 // keep track of different runs and avoid overwriting
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
-params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.MODE}_${timestamp}"
-//params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.MODE}_heritable_genes_${timestamp}"
+params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/debug_${params.mode}_heritable_genes_${timestamp}"
+//params.MODE = "predixcan" //default MODE
 
 params.predixcan = [
     window: 1000000,
     threshold: 1,
-    features: "order",
-    model: "elasticnet" // can change
+    model: "elasticnet",
+    ldmode: "ldnone"
 ]
 
-params.predixcanRF = [
+params.predixcanLDStrict = [
     window: 1000000,
     threshold: 1,
-    features: "order",
-    model: "rf"
+    model: "elasticnet",
+    ldmode: "ldstrict"
+]
+
+params.randomforest = [
+    window: 1000000,
+    threshold: 1,
+    model: "rf",
+    ldmode: "ldnone"
 ]
 
 params.flipAllele = [
     window: 1000000,
     threshold: 1,
-    features: "order",
-    model: "flipallele"
+    model: "flipallele",
+    ldmode: "ldstrict"
 ]
 
 params.magma = [
     window: 0,
     threshold: 0.999,
-    features: "pca",
-    model: "elasticnet" // can change
+    model: "pcr",
+    ldmode: "ldnone"
 ]
+
+params.magmaLDStrict = [
+    window: 0,
+    threshold: 0.999,
+    model: "pcr",
+    ldmode: "ldstrict"
+]
+
 
 params.ldstrict = [
     ldWindow: "500kb",
@@ -68,33 +84,31 @@ params.ldlax = [
 params.ldnone = [:]
 
 workflow {
-    switch(params.MODE){
+    switch(params.mode){
         case "predixcan":
             mode_params=params.predixcan
-            mode_associated_ld = "ldnone"
             break
         case "magma":
             mode_params=params.magma
-            mode_associated_ld = "ldnone"
             break
-        case "predixcanRF":
+        case "randomforest":
             mode_params=params.predixcanRF
-            mode_associated_ld = "ldmed"
             break
         case "flipAllele":
             mode_params = params.flipAllele
-            mode_associated_ld = "ldmed"
             break
-            
+        case "predixcanLDStrict":
+            mode_params = params.predixcanLDStrict
+            break
+        case "magmaLDStrict":
+            mode_params = params.magmaLDStrict
+            break
         default:
-            def available_modes = ['predixcan', 'magma', 'predixcanRF', 'flipAllele']
-            error "Unknown MODE: '${params.MODE}'. Available modes: ${available_modes.join(', ')}"
+            def available_modes = ['predixcan', 'magma', 'randomforest', 'flipAllele', 'predixcanLDStrict', 'magmaLDStrict']
+            error "Unknown mode: '${params.mode}'. Available modes: ${available_modes.join(', ')}"
     }
     
-    // defaults to mode-associated ld parameters unless user specifies ld parameters
-    def ld_mode = params.LDMODE ?: mode_associated_ld
-    
-    switch(ld_mode){
+    switch(mode_params.ldmode){
         case "ldlax":
             ld_params=params.ldlax
             break
@@ -109,7 +123,7 @@ workflow {
             break
         default:
             def available_modes = ['ldlax', 'ldmed','ldstrict','ldnone']
-            error "Unknown LD Mode: '${ld_mode}'. Available modes: ${available_modes.join(', ')}"
+            error "Unknown LD Mode: '${mode_params.ldmode}'. Available modes: ${available_modes.join(', ')}"
     }
     
     pfile_renamed = RENAMEVARIANTS(params.pfile)
@@ -140,7 +154,7 @@ workflow {
             tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
         }
         .join(heritable_gene)
-        .take(10) // Limit to 10 genes for now
+        .take(100) // Limit to 100 genes for now
         
     genes = GETSTARTSTOP(ginfo, mode_params.window) //genes: [val(ensg), val(chrom), val(start), val(end)]
     
@@ -157,81 +171,62 @@ workflow {
             tuple(row.TISSUE, row.ENSG)
         }
     
-    filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])
-        .collate(100)
-        //.take(10)        
+    filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
+        .collate(10)
+        .take(5)        
         
-    //switch(ld_mode){
-    //    case "ldnone":
-    //        variants = GETVARS(tissue_gene_ch, pfile_renamed)
-    //        break
-    //    default:
-    //        variants = GETLDFILTERVARS(tissue_gene_ch, pfile_renamed, ld_params.ldWindow, ld_params.ldR)  //TODO: test this or remove it as option
-    //}
-    
-    //variants: [tis, ensg, pgen, pvar, psam]
-    //features = GETFEATURES(variants, mode_params.features, mode_params.threshold) // features: [tis, ensg, feats_path, loadings_path]
-    
-    //features = GETVARFEATURES(filtered_tis_gene_ch, pfile_renamed, mode_params.features, mode_params.threshold)
-    
-    feat_results = GETVARFEATURES_BATCH(
-        filtered_tis_gene_ch,
-        pfile_renamed,
-        mode_params.features,
-        mode_params.threshold
-    )
-    
-    // Transform the output into individual tuples [tis, ensg, feats_file, loadings_file]
-    features = feat_results
-        .map { feats_files, loadings_files ->
+    switch(mode_params.ldmode){
+        case "ldnone":
+            var_results = GETVARS_BATCH(filtered_tis_gene_ch, pfile_renamed)
+            break
+        default:
+            var_results = GETLDFILTERVARS_BATCH(filtered_tis_gene_ch, pfile_renamed, ld_params.ldWindow, ld_params.ldR)  
+            break
+    }
+    variants = var_results
+        .map { pgens, pvars, psams ->
             def pairs = []
-            feats_files.each { feats_file ->
-                // Extract basename by removing _feats.tsv suffix
-                def basename = feats_file.name.replaceAll('_feats\\.tsv$', '')
+            pgens.each { pgen ->
+                // Extract basename (e.g., "Brain_ENSG001" from "Brain_ENSG001.pgen")
+                def basename = pgen.baseName
 
-                // Extract tis and ensg for the tuple
+                // Extract tis and ensg from basename
                 // Assuming format: tissue_ENSG... where ENSG marks the start of gene ID
                 def ensgMatch = (basename =~ /^(.+?)_(ENSG\d+.*)$/)
                 if (ensgMatch) {
                     def tis = ensgMatch[0][1]
                     def ensg = ensgMatch[0][2]
 
-                    // Find matching loadings file using basename
-                    def loadings_file = loadings_files.find { 
-                        it.name == "${basename}_loadings.tsv" 
-                    }
+                    // Find matching pvar and psam files using basename
+                    def pvar = pvars.find { it.baseName == basename }
+                    def psam = psams.find { it.baseName == basename }
 
-                    if (loadings_file) {
-                        pairs << tuple(tis, ensg, feats_file, loadings_file)
+                    if (pvar && psam) {
+                        pairs << tuple(tis, ensg, pgen, psam, pvar)
                     }
                 }
             }
             return pairs
         }
-        .flatMap() 
+        .flatMap() //[tis, ensg, pgen, psam, pvar]
+        
+    variants_for_model = variants
+        .map{tis,ensg,pgen,psam,pvar ->
+            def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
+            def covariate_path = file(params.covariates)
+            def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
+            [tis,ensg,pgen,psam,pvar,expression_path,covariate_path, qtl_path]
+        }
+            
+    models = FITMODEL(variants_for_model, mode_params.model, mode_params.threshold, params.train)
     
-    features_for_model = features
-    .map{tis,ensg,feat_path,loading_path ->
-        def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
-        def covariate_path = file(params.covariates)
-        def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
-        [tis, ensg, feat_path, expression_path, covariate_path, qtl_path]
-    }
-
-    models = FITMODEL(features_for_model, mode_params.model, mode_params.threshold)
-
-    //TODO: add model path some other way
-    //maybe join with models?
-    //features: [tis, ensg, feat_path, loading_path]
-    //models: [tis, ensg, model]
-    
-    features_for_score = features
+    variants_for_scores = variants
         .join(models, by: [0,1])
-        .map{tis,ensg,feat_path,loading_path, model_path ->
+        .map{tis, ensg, pgen, psam, pvar, model_path ->
         def covariate_path = file(params.covariates)
-        [tis, ensg, model_path, covariate_path, feat_path]
+        [tis, ensg, pgen,psam,pvar, model_path, covariate_path]
     } 
-    scores = MODELSCORE(features_for_score)
+    scores = MODELSCORE(variants_for_scores)
 }
 
 process RENAMEVARIANTS{
@@ -270,7 +265,7 @@ process GETSTARTSTOP{
     
     
     exec:
-    if (params.MODE == "magma") {
+    if (params.mode == "magma") {
         if (strand == "+") {
             start = tss - window
             end = tss + length + window
@@ -558,16 +553,147 @@ EOF
     """
 }
 
+process GETVARS_BATCH {
+    cpus 2
+    memory 32.GB
+    publishDir params.outdir + '/vars'
+    //errorStrategy 'ignore'
+    
+    input:
+    val(batch)  // batch is a list of tuples
+    tuple path(pgen), path(pvar), path(psam)
+    
+    output:
+    tuple path("*.pgen"), path("*.pvar"), path("*.psam"), optional: true
+    
+    script:
+    """
+    # Process each tuple in the batch
+    for item in ${batch.collect { "'${it[0]}|${it[1]}|${it[2]}|${it[3]}|${it[4]}'" }.join(' ')}; do
+        IFS='|' read -r tis ensg chrom start stop <<< "\$item"
+        
+        python ${projectDir}/bin/qtl_filter.py \
+            --qtl-folder ${params.gtexQTLfolder} \
+            --index-folder ${params.gtexQTLindexFolder} \
+            --gene "\$ensg" \
+            --tis "\$tis" \
+            --output "temp_\${tis}_\${ensg}.txt"
+        
+        if [ -s "temp_\${tis}_\${ensg}.txt" ]; then
+            plink2 \
+                --pfile ${pgen.baseName} \
+                --chr "\$chrom" \
+                --from-bp "\$start" \
+                --to-bp "\$stop" \
+                --extract "temp_\${tis}_\${ensg}.txt" \
+                --force-intersect \
+                --make-pgen \
+                --out "\${tis}_\${ensg}"
+        else
+            echo "temp_\${tis}_\${ensg}.txt does not exist or is empty"
+        fi
+    done
+    """
+}
+
+//TODO: errors can still arise because some of the gtex variants are missing from the tcga pfiles being used as ld references
+//      maybe updating to the tcga wgs would help?
+
+process GETLDFILTERVARS_BATCH {
+    cpus 2
+    memory 32.GB
+    publishDir params.outdir + '/vars'
+    //errorStrategy 'ignore'
+    
+    input:
+    val(batch)  // batch is a list of tuples
+    tuple path(pgen), path(pvar), path(psam)
+    val(window)
+    val(r2)
+    
+    output:
+    tuple path("*.pgen"), path("*.pvar"), path("*.psam"), optional: true
+    
+    script:
+    """
+    # Process each tuple in the batch
+    for item in ${batch.collect { "'${it[0]}|${it[1]}|${it[2]}|${it[3]}|${it[4]}'" }.join(' ')}; do
+        IFS='|' read -r tis ensg chrom start stop <<< "\$item"
+        
+        plink2 \
+            --pfile ${pgen.baseName} \
+            --chr "\$chrom" \
+            --from-bp "\$start" \
+            --to-bp "\$stop" \
+            --make-pgen \
+            --out "\${tis}_\${ensg}_temp"
+        
+        python ${projectDir}/bin/qtl_filter.py \
+            --qtl-folder ${params.gtexQTLfolder} \
+            --index-folder ${params.gtexQTLindexFolder} \
+            --gene "\$ensg" \
+            --tis "\$tis" \
+            --pvar "\${tis}_\${ensg}_temp.pvar" \
+            --output "temp_\${tis}_\${ensg}.txt"            
+        
+            
+        if [ -s "temp_\${tis}_\${ensg}.txt" ]; then
+            num_lines=\$(wc -l < "temp_\${tis}_\${ensg}.txt" )
+            
+            # exactly 1 eqtl
+            if [ "\$num_lines" -eq 1 ]; then
+                plink2 \
+                    --pfile ${pgen.baseName} \
+                    --chr "\$chrom" \
+                    --from-bp "\$start" \
+                    --to-bp "\$stop" \
+                    --extract "temp_\${tis}_\${ensg}.txt" \
+                    --force-intersect \
+                    --make-pgen \
+                    --out "\${tis}_\${ensg}"  
+                    
+            # more than 1 eqtl, run ld prune first
+            else
+                plink2 \
+                    --indep-pairwise ${window} ${r2} \
+                    --pfile ${params.europfile}  \
+                    --extract "temp_\${tis}_\${ensg}.txt" \
+                    --out "\${tis}_\${ensg}"
+                    
+                plink2 \
+                    --pfile ${pgen.baseName} \
+                    --chr "\$chrom" \
+                    --from-bp "\$start" \
+                    --to-bp "\$stop" \
+                    --extract "\${tis}_\${ensg}.prune.in" \
+                    --force-intersect \
+                    --make-pgen \
+                    --out "\${tis}_\${ensg}"                
+
+            fi            
+            
+        else
+             echo "no eqtls found for \${tis} and \${ensg}"
+        fi
+        
+        rm -f *_temp.*
+    done
+    
+    
+    """
+}
+
 process FITMODEL{
     cpus 1
     memory 32.GB
     publishDir params.outdir + '/models'
-    errorStrategy 'ignore'
+    //errorStrategy 'ignore'
     
     input:
-    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl)
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl)
     val(model_type)
     val(thres)
+    path(train)
 
     output:
     tuple val(tis), val(ensg), path("*.pkl")
@@ -575,15 +701,16 @@ process FITMODEL{
     script:
     """
     python ${projectDir}/bin/fit_model.py \\
-        --features ${features} \\
+        --pgen ${pgen} \\
+        --psam ${psam} \\
+        --pvar ${pvar} \\
         --expression ${expression} \\
         --covariates ${covariates} \\
         --model ${model_type} \\
         --gene ${ensg} \\
         --qtl ${qtl} \\
-        --samples ${params.train} \\
-        --thres ${thres}
-        //--output "${tis}_${ensg}_${task.hash}.pkl"
+        --samples ${train} \\
+        --thres ${thres} \\
         --output "${tis}_${ensg}.pkl"
     """ 
 }
@@ -594,15 +721,17 @@ process MODELSCORE {
     publishDir params.outdir + '/scores'
     
     input:
-    tuple val(tis), val(ensg), path(model), path(covariates), path(features)
-    
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(model), path(covariates)
+
     output:
     tuple val(ensg), path("*_scores.tsv")
     
     script:
     """
     python ${projectDir}/bin/model_score.py \\
-        --features ${features} \\
+        --pgen ${pgen} \\
+        --psam ${psam} \\
+        --pvar ${pvar} \\
         --covariates ${covariates} \\
         --model ${model} \\
         --output "${tis}_${ensg}_scores.tsv"
@@ -612,7 +741,8 @@ process MODELSCORE {
 process FIT_AND_SCORE {
     cpus 2
     memory 32.GB
-    publishDir params.outdir + '/scores'
+    publishDir params.outdir + '/scores', pattern: '*_scores.tsv'
+    publishDir params.outdir + '/models', pattern: '*.pkl'
 
     input:
     tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl)
@@ -620,8 +750,8 @@ process FIT_AND_SCORE {
     val(thres)
 
     output:
-    tuple val(tis), val(ensg), path("*_scores.tsv")
-    tuple val(tis), val(ensg), path("*.pkl"), optional: true  // in order to still save model
+    tuple val(tis), val(ensg), path("*.pkl"), path("*_scores.tsv")
+    //tuple val(tis), val(ensg), path("*.pkl"), optional: true  // in order to still save model
 
     script:
     """
