@@ -748,7 +748,7 @@ process FIT_AND_SCORE {
     publishDir params.outdir + '/models', pattern: '*.pkl'
 
     input:
-    tuple val(tis), val(ensg), path(features), path(expression), path(covariates), path(qtl)
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl)
     val(model_type)
     val(thres)
 
@@ -759,7 +759,9 @@ process FIT_AND_SCORE {
     script:
     """
     python ${projectDir}/bin/fit_and_score.py \
-        --features ${features} \
+        --pgen ${pgen} \
+        --psam ${psam} \
+        --pvar ${pvar} \
         --expression ${expression} \
         --covariates ${covariates} \
         --model ${model_type} \
@@ -767,6 +769,7 @@ process FIT_AND_SCORE {
         --qtl ${qtl} \
         --samples ${params.train} \
         --thres ${thres} \
-        --out-prefix "${tis}_${ensg}"
+        --model_output "${tis}_${ensg}.pkl" \
+        --score_output "${tis}_${ensg}"
     """
 }
