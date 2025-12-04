@@ -4,25 +4,23 @@ import pandas as pd
 import numpy as np
 import joblib
 import argparse
-from fit_model import load_covariates
+from fit_model import load_covariates, load_pgen_data
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--features", required=True)
+    parser.add_argument("--pgen", required=True, help="path to .pgen file")
+    parser.add_argument("--psam", required=True, help="path to .psam file")
+    parser.add_argument("--pvar", required=True, help="path to .pvar file")
     parser.add_argument("--model", required=True)
     parser.add_argument("--covariates", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
     # Load features
-    X = pd.read_csv(args.features, sep="\t", index_col=0)
+    X = load_pgen_data(args.pgen, args.psam, args.pvar)
 
     # Load covariates
-    cov = pd.read_csv(args.covariates, sep="\t")
-    if "#IID" in cov.columns:
-        cov = cov.rename(columns={"#IID": "IID"})
-    cov = cov.set_index("IID")
-    cov.index = cov.index.astype(str).str.strip()
+    cov = load_covariates(args.covariates)
 
     # Align features and covariates
     common_samples = X.index.intersection(cov.index)
