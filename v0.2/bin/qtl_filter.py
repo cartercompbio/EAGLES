@@ -78,6 +78,13 @@ def load_by_id(filename, index_file, gene, col_name = 'SNP'):
 
         return values
     
+def variant_ids_from_pvar(pvar):
+    with open(pvar, 'r') as file:
+        lines = [l.strip().replace("#","").split('\t') for l in file if not l.startswith("##")]
+        id_pos = lines[0].index('ID')
+        pvar_snps = set([l[id_pos] for l in lines[1:]])
+        return pvar_snps
+    
 def load_by_tis(gene, outfile, **kwargs):
     # ex tissues: ['Adipose_Subcutaneous', 'Adipose_Visceral_Omentum', 'Adrenal_Gland', 'Artery_Aorta', 'Artery_Coronary', 'Artery_Tibial', 'Brain_Amygdala', 'Brain_Anterior_cingulate_cortex_BA24', 'Brain_Caudate_basal_ganglia', 'Brain_Cerebellar_Hemisphere', 'Brain_Cerebellum', 'Brain_Cortex', 'Brain_Frontal_Cortex_BA9', 'Brain_Hippocampus', 'Brain_Hypothalamus', 'Brain_Nucleus_accumbens_basal_ganglia', 'Brain_Putamen_basal_ganglia', 'Brain_Spinal_cord_cervical_c-1', 'Brain_Substantia_nigra', 'Breast_Mammary_Tissue', 'Cells_Cultured_fibroblasts', 'Cells_EBV-transformed_lymphocytes', 'Colon_Sigmoid', 'Colon_Transverse', 'Esophagus_Gastroesophageal_Junction', 'Esophagus_Mucosa', 'Esophagus_Muscularis', 'Heart_Atrial_Appendage', 'Heart_Left_Ventricle', 'Kidney_Cortex', 'Liver', 'Lung', 'Minor_Salivary_Gland', 'Muscle_Skeletal', 'Nerve_Tibial', 'Ovary', 'Pancreas', 'Pituitary', 'Prostate', 'Skin_Not_Sun_Exposed_Suprapubic', 'Skin_Sun_Exposed_Lower_leg', 'Small_Intestine_Terminal_Ileum', 'Spleen', 'Stomach', 'Testis', 'Thyroid', 'Uterus', 'Vagina', 'Whole_Blood']
     try:
@@ -105,6 +112,13 @@ def load_by_tis(gene, outfile, **kwargs):
     except:
         col_name = 'SNP'
         
+    try:
+        pvar_path = kwargs['pvar']
+        assert pvar_path.endswith('.pvar')
+    except:
+        pvar_path = None
+        
+        
     if merge_type == 'any':
         func = lambda a,b: a|b
     elif merge_type == 'all':
@@ -112,6 +126,11 @@ def load_by_tis(gene, outfile, **kwargs):
         
     snp_sets = [set(load_by_id(f'{qtl_folder}/{t}.tsv', f'{index_folder}/{t}.pkl', gene)) for t in tis_list]
     merged_set = reduce(func, snp_sets)
+    
+    if pvar_path is not None:
+        pvar_snps = variant_ids_from_pvar(pvar_path)
+        merged_set = merged_set&pvar_snps
+    
     
     if len(merged_set)>0:
         with open(outfile, 'w') as outfile:
@@ -125,8 +144,9 @@ if __name__ == "__main__":
     parser.add_argument("--gene", required=True, help="gene identifier for desired eQTLs")
     parser.add_argument("--tis", nargs='+', required=True, help="list of tissues to consider")
     parser.add_argument("--output", required=True, help="Path to output eqtl list")
+    parser.add_argument("--pvar", default=None, help="Path to .pvar file to restrict returned eQTLs")
 
     args = parser.parse_args()
 
     # Load data
-    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list = args.tis)
+    load_by_tis(args.gene, args.output, qtl_folder = args.qtl_folder, index_folder = args.index_folder, tis_list = args.tis, pvar=args.pvar)
