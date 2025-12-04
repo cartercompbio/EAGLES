@@ -134,29 +134,29 @@ def pca_transform(g, thres = 0.999):
 
 def fit_PCR(X_scaled, cov_scaled, y, scaler, thres):
     
-    pcs,loadings = pca_transform(pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_), thres)
+    pcs,loadings = pca_transform(pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_[:X_scaled.shape[1]]), thres)
 
     pc_model = LinearRegression()
-    pc_model.fit(pcs, y)
+    pc_model.fit(pcs.join(cov_scaled), y)
 
-    pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_, pc_model.coef_)))
-    coef_scaled = loadings.dot(pc_weights)
-
-    coef_orig = coef_scaled / scaler.scale_
-    intercept_orig = (pc_model.intercept_ - 
-                         np.sum(coef_scaled * scaler.mean_ / scaler.scale_))
+    pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
+    temp = pd.Series(dict(zip(cov_scaled.columns, pc_model.coef_[pcs.shape[1]:])))
+    temp.index = temp.index.str.replace('cov|','')
+    coef_scaled = pd.concat([loadings.dot(pc_weights), temp])
 
     snp_model = LinearRegression()
-    snp_model.coef_ = coef_orig
-    snp_model.intercept_ = intercept_orig
+    snp_model.coef_ = coef_scaled.values
+    snp_model.intercept_ = pc_model.intercept_
     snp_model.feature_names_in_ = scaler.feature_names_in_
     
     return snp_model
 
 def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     scaler = StandardScaler()
-    X_cov_scaled = scaler.fit_transform(X.join(cov))
-    feat_list = list(X.columns)+list(cov.columns)
+    temp = X.join(cov)
+    X_cov_scaled = pd.DataFrame(scaler.fit_transform(temp), index = temp.index, columns = temp.columns)
+    feat_list = list(temp.columns)
+    del temp
 
     if model_type == "elasticnet":
         model = ElasticNetCV(l1_ratio=0.5, cv=5, max_iter=10000)
@@ -167,7 +167,7 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     elif model_type == "xgb":
         model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
     elif model_type == "pcr":
-        return {"scaler":scaler, "model":fit_PCR(X_cov_scaled.loc[:, X.columns],X_cov_scaled.loc[:, cov.columns], y, scaler, thres), "feature_names":feat_list}
+        return {"scaler":scaler, "model":fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres), "feature_names":feat_list}
     elif model_type == "flipallele":
         if qtl_df is None:
             raise ValueError("flipallele model requires --qtl input")
