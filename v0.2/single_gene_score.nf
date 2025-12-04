@@ -23,46 +23,52 @@ params.mode = "predixcan" //default MODE
 
 // keep track of different runs and avoid overwriting
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
-params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.mode}_heritable_genes_${timestamp}"
+params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/debug_${params.mode}_heritable_genes_${timestamp}"
+//params.MODE = "predixcan" //default MODE
 
-params.mode = "predixcan" //default MODE
 params.predixcan = [
-    window: 1000000,
+    upstream: 1000000,
+    downstream: 1000000,
     threshold: 1,
     model: "elasticnet",
     ldmode: "ldnone"
 ]
 
 params.predixcanLDStrict = [
-    window: 1000000,
+    upstream: 1000000,
+    downstream: 1000000,
     threshold: 1,
     model: "elasticnet",
     ldmode: "ldstrict"
 ]
 
 params.randomforest = [
-    window: 1000000,
+    upstream: 1000000,
+    downstream: 1000000,
     threshold: 1,
     model: "rf",
-    ldmode: "ldnone"
+    ldmode: "ldlax"
 ]
 
 params.flipAllele = [
-    window: 1000000,
+    upstream: 1000000,
+    downstream: 1000000,
     threshold: 1,
     model: "flipallele",
     ldmode: "ldstrict"
 ]
 
 params.magma = [
-    window: 0,
+    upstream: 5000,
+    downstream: 1500,
     threshold: 0.999,
     model: "pcr",
     ldmode: "ldnone"
 ]
 
 params.magmaLDStrict = [
-    window: 0,
+    upstream: 5000,
+    downstream: 1500,
     threshold: 0.999,
     model: "pcr",
     ldmode: "ldstrict"
@@ -146,17 +152,22 @@ workflow {
         .map { row -> 
             row.ENSG
         }
-
-    ginfo = Channel
-        .fromPath(params.geneInfo)
+        
+    gene_info_ch = Channel.fromPath(params.geneInfo)
+    
+    GETSTARTSTOP(
+        gene_info_ch,
+        mode_params.upstream,
+        mode_params.downstream
+    )
+    
+    genes = GETSTARTSTOP.out
         .splitCsv(header: true, sep: '\t')
         .map { row -> 
-            tuple(row.ENSG, row.CHROM, row.TSS as Integer, row.STRAND, row.LENGTH as Integer)
+            tuple(row.ENSG, row.CHROM, row.start, row.end)
         }
         .join(heritable_gene)
         .take(100) // Limit to 100 genes for now
-        
-    genes = GETSTARTSTOP(ginfo, mode_params.window) //genes: [val(ensg), val(chrom), val(start), val(end)]
     
     tissue_gene_ch = tissue_names.combine(genes) //[tis, ensg, chrom, start, end]
         .filter { tis,ensg,chrom,start,end ->
@@ -257,30 +268,22 @@ process GETSTARTSTOP{
     memory 4.GB
     
     input:
-    tuple val(ensg), val(chrom), val(tss), val(strand), val(length)
-    val window
+    path(gene_info)
+    val upstream
+    val downstream
     
     output:
-    tuple val(ensg), val(chrom), val(start), val(end)
+    path("*.tsv")
     
     
-    exec:
-    if (params.mode == "magma") {
-        if (strand == "+") {
-            start = tss - window
-            end = tss + length + window
-        } else if (strand == "-") {
-            start = tss - length - window
-            end = tss + window
-        }
-    } else {
-        start = tss - window
-        end = tss + window    
-    }
-    
-    if (start<0){
-        start = 0
-    }
+    script:
+    """
+    python ${projectDir}/bin/model_window.py \
+        --path ${gene_info} \
+        --upstream ${upstream} \
+        --downstream ${downstream} \
+        --output "gene_info"
+    """
 }
 
 process GETVARS{
