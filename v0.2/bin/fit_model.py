@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import pandas as pd
 import joblib
 import os
@@ -9,6 +8,58 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import xgboost as xgb
+from pgenlib import PgenReader
+import numpy as np
+
+
+def load_pgen_data(pgen_path, psam_path, pvar_path):
+    """
+    Load genotype data from PGEN format files into Python.
+    
+    Parameters:
+    -----------
+    pgen_path : str
+        Path to the .pgen file (genotype data);
+        if pgen_path is base.pgen, base.psam and base.pvar must exist
+    
+    Returns:
+    --------
+    genotype_matrix: pandas.DataFrame (sample x variant)
+        values are 0-2 corresponding to count of ALT allele
+    """
+    
+    # Load variant information (.pvar file)
+    with open(pvar_path, 'r') as file:
+        l = [x.strip().split('\t') for x in file if not x.startswith('##')]
+
+    variants = pd.DataFrame(l[1:], columns = l[0])['ID'].values
+
+    
+    samples = pd.read_csv(psam_path, sep = '\t').rename({'#IID':'IID'},axis = 1)['IID'].values
+            
+    # Initialize the PGEN reader
+    try:
+        pgen_reader = PgenReader(bytes(pgen_path, 'utf8'))
+    except Exception as e:
+        raise Exception(f"Error opening PGEN file: {e}")    
+    # Load genotype matrix
+    n_variants = pgen_reader.get_variant_ct()
+    n_samples = pgen_reader.get_raw_sample_ct()
+        
+    # Initialize genotype array
+    genotype_matrix = np.empty((n_variants, n_samples), dtype=np.int8)
+    
+    # Read genotypes variant by variant
+    buf = np.empty(n_samples, dtype=np.int32)
+    for variant_idx in range(n_variants):
+        pgen_reader.read(variant_idx, buf)
+        genotype_matrix[variant_idx, :] = buf
+        
+    genotype_matrix = pd.DataFrame(genotype_matrix, index = variants, columns = samples).T
+        
+    return genotype_matrix
+
+
 
 def load_covariates(path):
     cov = pd.read_csv(path, sep="\t")
@@ -53,21 +104,23 @@ def clean_gene_id(gene_id):
     gene_base = gene_base.split('_')[0]
     return gene_base
 
-def load_data(features_path, expression_path, samples = None):
-    X = pd.read_csv(features_path, sep="\t", index_col=0)
+def load_data(pgen_path, psam_path, pvar_path, expression_path, covar_path, samples = None):
+    X = load_pgen_data(pgen_path, psam_path, pvar_path)
+    cov = load_covariates(covar_path)
     
     y = pd.read_csv(expression_path, sep="\t", index_col=0)
     if y.shape[1] == 1:
         y = y.iloc[:, 0]
-        
-    common_samples = y.index.intersection(X.index)
+    
     if samples is not None:
-        common_samples = list(set(common_samples)&samples)
+        common_samples = list(set(y.index)&set(X.index)&set(cov.index)&samples)
+    else:
+        common_samples = list(set(y.index)&set(X.index)&set(cov.index))
         
     X = X.loc[common_samples]
     y = y.loc[common_samples]
-
-    return X, y
+    cov = cov.loc[common_samples]
+    return X, y, cov
 
 def pca_transform(g, thres = 0.999):
     pca = PCA()
@@ -79,7 +132,7 @@ def pca_transform(g, thres = 0.999):
     pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
     return pc_df, pc_comp.loc[:, pc_df.columns]
 
-def fit_PCR(X_scaled, y, scaler, thres):
+def fit_PCR(X_scaled, cov_scaled, y, scaler, thres):
     
     pcs,loadings = pca_transform(pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_), thres)
 
@@ -100,9 +153,10 @@ def fit_PCR(X_scaled, y, scaler, thres):
     
     return snp_model
 
-def fit_model(X, y, model_type, thres = 1, qtl_df=None, gene_id=None):
+def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_cov_scaled = scaler.fit_transform(X.join(cov))
+    feat_list = list(X.columns)+list(cov.columns)
 
     if model_type == "elasticnet":
         model = ElasticNetCV(l1_ratio=0.5, cv=5, max_iter=10000)
@@ -113,7 +167,7 @@ def fit_model(X, y, model_type, thres = 1, qtl_df=None, gene_id=None):
     elif model_type == "xgb":
         model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
     elif model_type == "pcr":
-        return {"scaler":scaler, "model":fit_PCR(X_scaled, y, scaler, thres), "feature_names":X.columns.tolist()}
+        return {"scaler":scaler, "model":fit_PCR(X_cov_scaled.loc[:, X.columns],X_cov_scaled.loc[:, cov.columns], y, scaler, thres), "feature_names":feat_list}
     elif model_type == "flipallele":
         if qtl_df is None:
             raise ValueError("flipallele model requires --qtl input")
@@ -128,17 +182,21 @@ def fit_model(X, y, model_type, thres = 1, qtl_df=None, gene_id=None):
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    model.fit(X_scaled, y)
+    model.fit(X_cov_scaled, y)
     return {
         "scaler": scaler,
         "model": model,
-        "feature_names": X.columns.tolist()
+        "feature_names": feat_list
     }
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--features", required=True, help="Path to features file (e.g. genotype data)")
+    #parser.add_argument("--features", required=True, help="Path to features file (e.g. genotype data)")
+    parser.add_argument("--pgen", required=True, help="path to .pgen file")
+    parser.add_argument("--psam", required=True, help="path to .psam file")
+    parser.add_argument("--pvar", required=True, help="path to .pvar file")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
+    parser.add_argument("--covariates", required=True, help="Path to covariate file")
     parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
@@ -150,7 +208,7 @@ def main():
     args.gene = clean_gene_id(args.gene)
     
     samples = set(pd.read_csv(args.samples, header = None)[0])
-    X, y_all = load_data(args.features, args.expression, samples)
+    X, y_all, cov = load_data(args.pgen, args.psam, args.pvar, args.expression, args.covariates, samples)
 
     if isinstance(y_all, pd.Series):
         y = y_all
@@ -162,7 +220,7 @@ def main():
     # load QTL table for flipped option
     qtl_df = load_qtl_table(args.qtl, args.gene) if args.model == "flipallele" else None
 
-    model = fit_model(X, y, args.model, args.thres, qtl_df=qtl_df, gene_id=args.gene)
+    model = fit_model(X, y,cov, args.model, args.thres, qtl_df=qtl_df, gene_id=args.gene)
     joblib.dump(model, args.output)
     print(f"Model saved to: {args.output}")
 
