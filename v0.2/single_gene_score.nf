@@ -24,7 +24,7 @@ params.mode = "predixcan" //default MODE
 // keep track of different runs and avoid overwriting
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
 params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.mode}_${timestamp}"
-//params.MODE = "predixcan" //default MODE
+
 
 params.predixcan = [
     upstream: 1000000,
