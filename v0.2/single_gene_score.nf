@@ -98,7 +98,7 @@ workflow {
             mode_params=params.magma
             break
         case "randomforest":
-            mode_params=params.predixcanRF
+            mode_params=params.randomforest
             break
         case "flipAllele":
             mode_params = params.flipAllele
