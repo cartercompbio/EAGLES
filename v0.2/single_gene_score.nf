@@ -26,54 +26,87 @@ def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
 params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.mode}_${timestamp}"
 
 
-params.predixcan = [
-    upstream: 1000000,
-    downstream: 1000000,
-    threshold: 1,
-    model: "elasticnet",
-    ldmode: "ldnone"
-]
+params.modes = [
+    predixcan: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "elasticnet",
+        ldmode: "ldnone"
+    ],
+    
+    predixcanLDStrict: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "elasticnet",
+        ldmode: "ldstrict"
+    ],
 
-params.predixcanLDStrict = [
-    upstream: 1000000,
-    downstream: 1000000,
-    threshold: 1,
-    model: "elasticnet",
-    ldmode: "ldstrict"
+    predixcanLDMed: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "elasticnet",
+        ldmode: "ldmed"
+    ],
+    
+    predixcanLDLax: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "elasticnet",
+        ldmode: "ldlax"
+    ],
+    
+    randomforest: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldlax"
+    ],
+    
+    flipAllele: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "flipallele",
+        ldmode: "ldstrict"
+    ],
+    
+    emagma: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 0.999,
+        model: "pcr",
+        ldmode: "ldnone"
+    ],
+    
+    emagmaLDStrict: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 0.999,
+        model: "pcr",
+        ldmode: "ldstrict"
+    ],
+    
+    magma: [
+        upstream: 5000,
+        downstream: 1500,
+        threshold: 0.999,
+        model: "pcr",
+        ldmode: "ldnone"
+    ],
+    
+    magmaLDStrict: [
+        upstream: 5000,
+        downstream: 1500,
+        threshold: 0.999,
+        model: "pcr",
+        ldmode: "ldstrict"
+    ]
 ]
-
-params.randomforest = [
-    upstream: 1000000,
-    downstream: 1000000,
-    threshold: 1,
-    model: "rf",
-    ldmode: "ldlax"
-]
-
-params.flipAllele = [
-    upstream: 1000000,
-    downstream: 1000000,
-    threshold: 1,
-    model: "flipallele",
-    ldmode: "ldstrict"
-]
-
-params.magma = [
-    upstream: 5000,
-    downstream: 1500,
-    threshold: 0.999,
-    model: "pcr",
-    ldmode: "ldnone"
-]
-
-params.magmaLDStrict = [
-    upstream: 5000,
-    downstream: 1500,
-    threshold: 0.999,
-    model: "pcr",
-    ldmode: "ldstrict"
-]
-
 
 params.ldstrict = [
     ldWindow: "500kb",
@@ -90,29 +123,11 @@ params.ldlax = [
 params.ldnone = [:]
 
 workflow {
-    switch(params.mode){
-        case "predixcan":
-            mode_params=params.predixcan
-            break
-        case "magma":
-            mode_params=params.magma
-            break
-        case "randomforest":
-            mode_params=params.randomforest
-            break
-        case "flipAllele":
-            mode_params = params.flipAllele
-            break
-        case "predixcanLDStrict":
-            mode_params = params.predixcanLDStrict
-            break
-        case "magmaLDStrict":
-            mode_params = params.magmaLDStrict
-            break
-        default:
-            def available_modes = ['predixcan', 'magma', 'randomforest', 'flipAllele', 'predixcanLDStrict', 'magmaLDStrict']
-            error "Unknown mode: '${params.mode}'. Available modes: ${available_modes.join(', ')}"
+    if (!params.modes.containsKey(params.mode)) {
+        error "Unknown mode: '${params.mode}'. Available modes: ${params.modes.keySet().join(', ')}"
     }
+
+    mode_params = params.modes[params.mode]
     
     switch(mode_params.ldmode){
         case "ldlax":
@@ -166,8 +181,7 @@ workflow {
         .map { row -> 
             tuple(row.ENSG, row.CHROM, row.start, row.end)
         }
-        .join(heritable_gene)
-        .take(100) // Limit to 100 genes for now
+        .join(heritable_gene)        
     
     tissue_gene_ch = tissue_names.combine(genes) //[tis, ensg, chrom, start, end]
         .filter { tis,ensg,chrom,start,end ->
@@ -182,44 +196,34 @@ workflow {
             tuple(row.TISSUE, row.ENSG)
         }
     
-    filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
-        .collate(10)
-        .take(5)        
+    if (params.debug) {
+        filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
+            .groupTuple(by: [1, 2, 3, 4]) 
+            .take(30)  
+    } else {
+        filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
+            .groupTuple(by: [1, 2, 3, 4]) 
+    }
+    
         
     switch(mode_params.ldmode){
         case "ldnone":
-            var_results = GETVARS_BATCH(filtered_tis_gene_ch, pfile_renamed)
+            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_renamed, false, "", "")
             break
         default:
-            var_results = GETLDFILTERVARS_BATCH(filtered_tis_gene_ch, pfile_renamed, ld_params.ldWindow, ld_params.ldR)  
+            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_renamed, true,  ld_params.ldWindow, ld_params.ldR)
             break
     }
-    variants = var_results
-        .map { pgens, pvars, psams ->
-            def pairs = []
-            pgens.each { pgen ->
-                // Extract basename (e.g., "Brain_ENSG001" from "Brain_ENSG001.pgen")
-                def basename = pgen.baseName
-
-                // Extract tis and ensg from basename
-                // Assuming format: tissue_ENSG... where ENSG marks the start of gene ID
-                def ensgMatch = (basename =~ /^(.+?)_(ENSG\d+.*)$/)
-                if (ensgMatch) {
-                    def tis = ensgMatch[0][1]
-                    def ensg = ensgMatch[0][2]
-
-                    // Find matching pvar and psam files using basename
-                    def pvar = pvars.find { it.baseName == basename }
-                    def psam = psams.find { it.baseName == basename }
-
-                    if (pvar && psam) {
-                        pairs << tuple(tis, ensg, pgen, psam, pvar)
-                    }
-                }
-            }
-            return pairs
+    
+    variants = variant_res
+        .transpose()
+        .map { pgen, psam, pvar ->
+            def filename = pgen.baseName  
+            def match = filename =~ /^(.+)_(ENSG\d+)$/
+            def tis = match[0][1] 
+            def ensg = match[0][2]  
+            [tis, ensg, pgen, psam, pvar]
         }
-        .flatMap() //[tis, ensg, pgen, psam, pvar]
         
     variants_for_model = variants
         .map{tis,ensg,pgen,psam,pvar ->
@@ -286,400 +290,99 @@ process GETSTARTSTOP{
     """
 }
 
-process GETVARS{
-    cpus 1
-    memory 16.GB
-    publishDir params.outdir + '/vars'
-    errorStrategy 'ignore'
-    
-    input:
-    tuple val(tis), val(ensg), val(chrom), val(start), val(stop)
-    tuple path(pgen), path(pvar), path(psam)
-    
-    output:
-    tuple val(tis), val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam"), optional: true
-    
-    script:
-    """
-    
-    python ${projectDir}/bin/qtl_filter.py \
-        --qtl-folder ${params.gtexQTLfolder} \
-        --index-folder ${params.gtexQTLindexFolder} \
-        --gene ${ensg} \
-        --tis ${tis} \
-        --output "temp.txt"
-    
-    if [ -s "temp.txt" ]; then
-        plink2 \
-            --pfile ${pgen.baseName} \
-            --chr ${chrom} \
-            --from-bp ${start} \
-            --to-bp ${stop} \
-            --extract "temp.txt" \
-            --force-intersect \
-            --make-pgen \
-            --out "${tis}_${ensg}"
-    else
-        echo "temp.txt does not exist or is empty"
-    fi
-    """
-}
-
-process GETLDFILTERVARS{
-    cpus 1
-    memory 16.GB
-    publishDir params.outdir + '/filtervars'
-    errorStrategy 'ignore'
-    
-    input:
-    tuple val(ensg), val(chrom), val(start), val(stop)
-    tuple path(pgen), path(pvar), path(psam)
-    val(window)
-    val(r2)
-    
-    output:
-    tuple val(ensg), path("*.pgen"), path("*.pvar"), path("*.psam")
-    
-    script:
-    """
-    #!/bin/bash
-    
-    handle_error() {
-        exit 1
-    }
-    
-    # Set trap to catch errors
-    # log genes with errors but do not emit values from this process
-    trap 'handle_error' ERR
-    set -e
-    
-    touch "temp.txt"
-    python ${projectDir}/bin/qtl_filter.py \
-        --qtl-folder ${params.gtexQTLfolder} \
-        --index-folder ${params.gtexQTLindexFolder} \
-        --gene ${ensg} \
-        --tis "pantissue_no_blood_brain" \
-        --output "temp.txt"
-    
-    plink2 \
-        --pfile ${pgen.baseName} \
-        --chr ${chrom} \
-        --from-bp ${start} \
-        --to-bp ${stop} \
-        --extract "temp.txt" \
-        --force-intersect \
-        --make-pgen \
-        --out "${ensg}_temp"
-
-    vars=\$(mktemp)
-    awk '!/^##/ && NR > 1 {print \$3}' "${ensg}_temp.pvar" > \$vars
-    plink2 --indep-pairwise ${window} ${r2} --pfile ${params.europfile}  --extract \$vars --out ${ensg}
-    
-    plink2 --pfile "${ensg}_temp" --extract "${ensg}.prune.in" --make-pgen --out ${ensg}
-    
-    rm \$vars
-    rm "${ensg}.prune.in"
-    rm "${ensg}_temp.pvar"
-    rm "${ensg}_temp.pgen"
-    rm "${ensg}_temp.psam"
-    rm "${ensg}_temp.log"
-    
-    """
-}
-
-
-
-process LDPRUNE{
-    cpus 1
-    memory 16.GB
-    publishDir params.outdir + '/ldprune'
-    
-    input:
-    tuple val(ensg), path(pgen), path(pvar), path(psam)
-    val(window)
-    val(r2)
-    
-    output:
-    tuple val(ensg), path("*.prune.in")
-    
-    script:
-    """
-    plink2 --pfile ${params.pfile} --chr ${chrom} --from-bp ${start} --to-bp ${stop} --make-pgen --out "${ensg}_temp"
-    
-    vars=\$(mktemp)
-    awk '!/^##/ && NR > 1 {print \$3}' "${ensg}_temp.pvar" > \$vars
-    plink2 --indep-pairwise ${window} ${r2} --pfile ${params.europfile}  --extract \$vars --out ${ensg}
-        
-    rm \$vars
-    """
-}
-
-
-process GETFEATURES{
-    cpus 1
-    memory 16.GB
-    publishDir params.outdir + '/features'
-    
-    input:
-    tuple val(tis), val(ensg), path(pgen), path(pvar), path(psam)
-    val(mode)
-    val(thres)
-    
-    output:
-    tuple val(tis), val(ensg), path("${tis}_${ensg}_feats.tsv"), path("${tis}_${ensg}_loadings.tsv")
-    
-    script:
-    """
-    python ${projectDir}/bin/feature.py --pgen ${pgen} --psam ${psam} --pvar ${pvar} --method ${mode} --thres ${thres} --output "${tis}_${ensg}"
-    """
-
-}
-
-process GETVARFEATURES{
-    cpus 1
-    memory 16.GB
-    publishDir params.outdir + '/features'
-    errorStrategy 'ignore'
-    
-    input:
-    tuple val(tis), val(ensg), val(chrom), val(start), val(stop)
-    tuple path(pgen), path(pvar), path(psam)
-    val(mode)
-    val(thres)
-    
-    output:
-    tuple val(tis), val(ensg), path("${tis}_${ensg}_feats.tsv"), path("${tis}_${ensg}_loadings.tsv"), optional: true
-    
-    script:
-    """
-    
-    python ${projectDir}/bin/qtl_filter.py \
-        --qtl-folder ${params.gtexQTLfolder} \
-        --index-folder ${params.gtexQTLindexFolder} \
-        --gene ${ensg} \
-        --tis ${tis} \
-        --output "temp.txt"
-    
-    if [ -s "temp.txt" ]; then
-        plink2 \
-            --pfile ${pgen.baseName} \
-            --chr ${chrom} \
-            --from-bp ${start} \
-            --to-bp ${stop} \
-            --extract "temp.txt" \
-            --force-intersect \
-            --make-pgen \
-            --out "${tis}_${ensg}"
-            
-        if [ -s "${tis}_${ensg}.pvar" ]; then
-            python ${projectDir}/bin/feature.py \
-                --pgen "${tis}_${ensg}.pgen" \
-                --psam "${tis}_${ensg}.psam" \
-                --pvar "${tis}_${ensg}.pvar" \
-                --method ${mode} \
-                --thres ${thres} \
-                --output "${tis}_${ensg}"
-        else
-            echo "no variants"
-        fi
-    else
-        echo "temp.txt does not exist or is empty"
-    fi
-    """
-}
-
-process GETVARFEATURES_BATCH {
-    cpus 4
-    memory 32.GB
-    publishDir params.outdir + '/features'
-    errorStrategy 'ignore'
-    
-    input:
-    val(batch)  // List of tuples: [(tis, ensg, chrom, start, stop), ...]
-    tuple path(pgen), path(pvar), path(psam)
-    val(mode)
-    val(thres)
-    
-    output:
-    tuple path("*_feats.tsv"), path("*_loadings.tsv"), optional: true
-    
-    script:
-    """
-    #!/bin/bash
-    
-    # Process each item in the batch
-    cat << 'EOF' > batch_items.txt
-${batch.collect { tis, ensg, chrom, start, stop -> "${tis}\t${ensg}\t${chrom}\t${start}\t${stop}" }.join('\n')}
-EOF
-
-    while IFS=\$'\\t' read -r tis ensg chrom start stop; do
-        echo "Processing \${tis} - \${ensg}"
-        
-        python ${projectDir}/bin/qtl_filter.py \\
-            --qtl-folder ${params.gtexQTLfolder} \\
-            --index-folder ${params.gtexQTLindexFolder} \\
-            --gene "\${ensg}" \\
-            --tis "\${tis}" \\
-            --output "temp_\${tis}_\${ensg}.txt"
-        
-        if [ -s "temp_\${tis}_\${ensg}.txt" ]; then
-            plink2 \\
-                --pfile ${pgen.baseName} \\
-                --chr "\${chrom}" \\
-                --from-bp "\${start}" \\
-                --to-bp "\${stop}" \\
-                --extract "temp_\${tis}_\${ensg}.txt" \\
-                --force-intersect \\
-                --make-pgen \\
-                --out "\${tis}_\${ensg}"
-                
-            if [ -s "\${tis}_\${ensg}.pvar" ]; then
-                python ${projectDir}/bin/feature.py \\
-                    --pgen "\${tis}_\${ensg}.pgen" \\
-                    --psam "\${tis}_\${ensg}.psam" \\
-                    --pvar "\${tis}_\${ensg}.pvar" \\
-                    --method ${mode} \\
-                    --thres ${thres} \\
-                    --output "\${tis}_\${ensg}"
-            else
-                echo "No variants for \${tis}_\${ensg}"
-            fi
-        else
-            echo "temp_\${tis}_\${ensg}.txt does not exist or is empty"
-        fi
-        
-        # Clean up intermediate files
-        rm -f temp_\${tis}_\${ensg}.txt
-        rm -f \${tis}_\${ensg}.pgen \${tis}_\${ensg}.pvar \${tis}_\${ensg}.psam
-        
-    done < batch_items.txt
-    """
-}
-
 process GETVARS_BATCH {
-    cpus 2
-    memory 32.GB
+    cpus 1
+    memory { 8.GB * task.attempt }
+    maxRetries 4
+    maxForks 50
     publishDir params.outdir + '/vars'
     //errorStrategy 'ignore'
     
     input:
-    val(batch)  // batch is a list of tuples
+    tuple val(tis_list), val(ensg), val(chrom), val(start), val(stop)
     tuple path(pgen), path(pvar), path(psam)
-    
-    output:
-    tuple path("*.pgen"), path("*.pvar"), path("*.psam"), optional: true
-    
-    script:
-    """
-    # Process each tuple in the batch
-    for item in ${batch.collect { "'${it[0]}|${it[1]}|${it[2]}|${it[3]}|${it[4]}'" }.join(' ')}; do
-        IFS='|' read -r tis ensg chrom start stop <<< "\$item"
-        
-        python ${projectDir}/bin/qtl_filter.py \
-            --qtl-folder ${params.gtexQTLfolder} \
-            --index-folder ${params.gtexQTLindexFolder} \
-            --gene "\$ensg" \
-            --tis "\$tis" \
-            --output "temp_\${tis}_\${ensg}.txt"
-        
-        if [ -s "temp_\${tis}_\${ensg}.txt" ]; then
-            plink2 \
-                --pfile ${pgen.baseName} \
-                --chr "\$chrom" \
-                --from-bp "\$start" \
-                --to-bp "\$stop" \
-                --extract "temp_\${tis}_\${ensg}.txt" \
-                --force-intersect \
-                --make-pgen \
-                --out "\${tis}_\${ensg}"
-        else
-            echo "temp_\${tis}_\${ensg}.txt does not exist or is empty"
-        fi
-    done
-    """
-}
-
-//TODO: errors can still arise because some of the gtex variants are missing from the tcga pfiles being used as ld references
-//      maybe updating to the tcga wgs would help?
-
-process GETLDFILTERVARS_BATCH {
-    cpus 2
-    memory 32.GB
-    publishDir params.outdir + '/vars'
-    //errorStrategy 'ignore'
-    
-    input:
-    val(batch)  // batch is a list of tuples
-    tuple path(pgen), path(pvar), path(psam)
+    val(prune)
     val(window)
     val(r2)
     
     output:
-    tuple path("*.pgen"), path("*.pvar"), path("*.psam"), optional: true
+    tuple path("*_${ensg}.pgen"), path("*_${ensg}.psam"), path("*_${ensg}.pvar"), optional: true
+
     
     script:
     """
-    # Process each tuple in the batch
-    for item in ${batch.collect { "'${it[0]}|${it[1]}|${it[2]}|${it[3]}|${it[4]}'" }.join(' ')}; do
-        IFS='|' read -r tis ensg chrom start stop <<< "\$item"
+    # Process each tissue for this gene/region combination
+    #for tis in ${tis_list.collect { "'${it}'" }.join(' ')}; do
+    for tis in ${tis_list.join(' ')}; do
         
         plink2 \
             --pfile ${pgen.baseName} \
-            --chr "\$chrom" \
-            --from-bp "\$start" \
-            --to-bp "\$stop" \
+            --chr "${chrom}" \
+            --from-bp "${start}" \
+            --to-bp "${stop}" \
             --make-pgen \
-            --out "\${tis}_\${ensg}_temp"
+            --out "\${tis}_${ensg}_temp"
         
         python ${projectDir}/bin/qtl_filter.py \
             --qtl-folder ${params.gtexQTLfolder} \
             --index-folder ${params.gtexQTLindexFolder} \
-            --gene "\$ensg" \
-            --tis "\$tis" \
-            --pvar "\${tis}_\${ensg}_temp.pvar" \
-            --output "temp_\${tis}_\${ensg}.txt"            
+            --gene "${ensg}" \
+            --tis "\${tis}" \
+            --pvar "\${tis}_${ensg}_temp.pvar" \
+            --output "temp_\${tis}_${ensg}.txt"            
         
-            
-        if [ -s "temp_\${tis}_\${ensg}.txt" ]; then
-            num_lines=\$(wc -l < "temp_\${tis}_\${ensg}.txt" )
+        # any eqtl found
+        if [ -s "temp_\${tis}_${ensg}.txt" ]; then
+            num_lines=\$(grep -c '' "temp_\${tis}_${ensg}.txt")
             
             # exactly 1 eqtl
             if [ "\$num_lines" -eq 1 ]; then
                 plink2 \
                     --pfile ${pgen.baseName} \
-                    --chr "\$chrom" \
-                    --from-bp "\$start" \
-                    --to-bp "\$stop" \
-                    --extract "temp_\${tis}_\${ensg}.txt" \
+                    --chr "${chrom}" \
+                    --from-bp "${start}" \
+                    --to-bp "${stop}" \
+                    --extract "temp_\${tis}_${ensg}.txt" \
                     --force-intersect \
                     --make-pgen \
-                    --out "\${tis}_\${ensg}"  
+                    --out "\${tis}_${ensg}"  
                     
-            # more than 1 eqtl, run ld prune first
-            else
+            # more than 1 eqtl and ld prune enabled
+            elif [ "${prune}" = "true" ]; then
                 plink2 \
                     --indep-pairwise ${window} ${r2} \
                     --pfile ${params.europfile}  \
-                    --extract "temp_\${tis}_\${ensg}.txt" \
-                    --out "\${tis}_\${ensg}"
+                    --extract "temp_\${tis}_${ensg}.txt" \
+                    --out "\${tis}_${ensg}"
                     
                 plink2 \
                     --pfile ${pgen.baseName} \
-                    --chr "\$chrom" \
-                    --from-bp "\$start" \
-                    --to-bp "\$stop" \
-                    --extract "\${tis}_\${ensg}.prune.in" \
+                    --chr "${chrom}" \
+                    --from-bp "${start}" \
+                    --to-bp "${stop}" \
+                    --extract "\${tis}_${ensg}.prune.in" \
                     --force-intersect \
                     --make-pgen \
-                    --out "\${tis}_\${ensg}"                
-
-            fi            
-            
+                    --out "\${tis}_${ensg}"
+                    
+            # more than 1 eqtl, no ld pruning
+            else
+                plink2 \
+                    --pfile ${pgen.baseName} \
+                    --chr "${chrom}" \
+                    --from-bp "${start}" \
+                    --to-bp "${stop}" \
+                    --extract "temp_\${tis}_${ensg}.txt" \
+                    --force-intersect \
+                    --make-pgen \
+                    --out "\${tis}_${ensg}"
+            fi        
+        #no eqtls found    
         else
-             echo "no eqtls found for \${tis} and \${ensg}"
+             echo "no eqtls found for \${tis} and ${ensg}"
         fi
         
-        rm -f *_temp.*
+        rm -f *temp*
     done
     
     
