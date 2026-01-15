@@ -1,7 +1,9 @@
 process FITMODEL{
     cpus 1
-    memory 32.GB
+    memory { 8.GB * task.attempt }
+    maxRetries 4
     publishDir params.outdir + '/models'
+    maxForks 50
     //errorStrategy 'ignore'
     
     input:
