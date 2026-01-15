@@ -1,17 +1,9 @@
 // GENERAL PARAMETERS
-//params.geneInfo = "/cellar/shared/carterlab/projects/eagle/grch38_gene_tss.tsv"
 params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/clean_gene_info.tsv"
-//params.europfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2_eur_only/tcga.common.european.noimmunecancers"
 params.europfile = "/cellar/users/domeyer/EAGLE/test_expr/ld_reference/GTEx.qc_passed.EUR"
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
-//params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_0_01.tsv"
 params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_no_predixcan_missing_snps.tsv"
-
-// TCGA PARAMETERS
-//params.pfile = "/carter/controlled/dbGaP/phs000178_TCGA/TOPMED_TCGA/plink2/tcga.common"
-//params.expressionfolder = "/cellar/users/domeyer/data/tcga/expr_cn_by_ensg/expression"
-//params.covariates  = "/cellar/users/nopopko/projects/eagles/covariates_test.csv"
 
 // GTEX PARAMETERS
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
@@ -21,13 +13,18 @@ params.train = "/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
 
 params.mode = "predixcan" //default MODE
 
-// keep track of different runs and avoid overwriting
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
-params.outdir = "/cellar/shared/carterlab/projects/eagle/v0.2/test_out/${params.mode}_${timestamp}"
+params.debug = false
+params.outdir = params.debug ? 
+    //debug_outdirectory
+    "/cellar/shared/carterlab/projects/eagle/v0.2/debug/${params.mode}_${timestamp}" :
+    
+    //final_outdirectory
+    "/cellar/shared/carterlab/projects/eagle/v0.2/heritable_genes_8000_out/${params.mode}"
 
 
 params.modes = [
-    predixcan: [
+    predixcan: [ 
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
@@ -51,15 +48,23 @@ params.modes = [
         ldmode: "ldmed"
     ],
     
-    predixcanLDLax: [
+    predixcanLDLax: [ 
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
         model: "elasticnet",
         ldmode: "ldlax"
     ],
-    
-    randomforest: [
+
+    randomforestLDMed: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldmed"
+    ],
+
+    randomforestLDLax: [ 
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
@@ -67,12 +72,28 @@ params.modes = [
         ldmode: "ldlax"
     ],
     
-    flipAllele: [
+    flipAlleleLDStrict: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
         model: "flipallele",
         ldmode: "ldstrict"
+    ],
+    
+    flipAlleleLDMed: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "flipallele",
+        ldmode: "ldmed"
+    ],
+    
+    flipAlleleLDLax: [
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "flipallele",
+        ldmode: "ldlax"
     ],
     
     emagma: [
@@ -91,21 +112,21 @@ params.modes = [
         ldmode: "ldstrict"
     ],
     
-    magma: [
-        upstream: 5000,
-        downstream: 1500,
+    emagmaLDMed: [
+        upstream: 1000000,
+        downstream: 1000000,
         threshold: 0.999,
         model: "pcr",
-        ldmode: "ldnone"
+        ldmode: "ldmed"
     ],
     
-    magmaLDStrict: [
-        upstream: 5000,
-        downstream: 1500,
+    emagmaLDLax: [
+        upstream: 1000000,
+        downstream: 1000000,
         threshold: 0.999,
         model: "pcr",
-        ldmode: "ldstrict"
-    ]
+        ldmode: "ldlax"
+    ],
 ]
 
 params.ldstrict = [
@@ -121,6 +142,10 @@ params.ldlax = [
     ldR: 0.8
 ]
 params.ldnone = [:]
+
+include { RENAMEVARIANTS; GETSTARTSTOP; GETVARS_BATCH } from '../modules/preprocessing'
+include { FITMODEL; MODELSCORE } from '../modules/modeling'
+
 
 workflow {
     if (!params.modes.containsKey(params.mode)) {
