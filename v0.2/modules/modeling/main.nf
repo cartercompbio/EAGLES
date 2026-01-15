@@ -43,7 +43,7 @@ process MODELSCORE {
     tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(model), path(covariates)
 
     output:
-    tuple val(ensg), path("*_scores.tsv")
+    tuple val(tis), val(ensg), path("*_scores.tsv")
     
     script:
     """
