@@ -1,26 +1,27 @@
 // GENERAL PARAMETERS
-params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/clean_gene_info.tsv"
+params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/gtex_egene_gene_info.tsv"
 params.europfile = "/cellar/users/domeyer/EAGLE/test_expr/ld_reference/GTEx.qc_passed.EUR"
-params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
-params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
-params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_no_predixcan_missing_snps.tsv"
+params.gtexQTLfolder = "/cellar/users/domeyer/data/expecto/expecto_tables"
+params.gtexQTLindexFolder = "/cellar/users/domeyer/data/expecto/expecto_tables"
+params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/whole_blood_heritability_expecto_genes.tsv"
 
 // GTEX PARAMETERS
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
 params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
-params.covariates  = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/gtex.eigenvec"
+params.covariates = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/age_sex.tsv"
 params.train = "/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
 
 params.mode = "predixcan" //default MODE
 
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
 params.debug = false
+
 params.outdir = params.debug ? 
     //debug_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.2/debug/${params.mode}_${timestamp}" :
+    "/cellar/shared/carterlab/projects/eagle/v0.2/debug/whole_blood_expecto_test/${params.mode}_${timestamp}" :
     
     //final_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.2/heritable_genes_8000_out/${params.mode}"
+    "/cellar/shared/carterlab/projects/eagle/v0.2/whole_blood_expecto/${params.mode}"
 
 
 params.modes = [
