@@ -81,6 +81,8 @@ def load_by_id(filename, index_file, gene, col_name = 'SNP'):
 def variant_ids_from_pvar(pvar):
     with open(pvar, 'r') as file:
         lines = [l.strip().replace("#","").split('\t') for l in file if not l.startswith("##")]
+        if len(lines)==0:
+            return set()
         id_pos = lines[0].index('ID')
         pvar_snps = set([l[id_pos] for l in lines[1:]])
         return pvar_snps
