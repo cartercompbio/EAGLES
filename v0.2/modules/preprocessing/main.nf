@@ -50,7 +50,7 @@ process GETVARS_BATCH {
     maxRetries 4
     maxForks 50
     publishDir params.outdir + '/vars'
-    //errorStrategy 'ignore'
+    errorStrategy 'ignore'
     
     input:
     tuple val(tis_list), val(ensg), val(chrom), val(start), val(stop)
@@ -65,24 +65,27 @@ process GETVARS_BATCH {
     
     script:
     """
-    # Process each tissue for this gene/region combination
-    #for tis in ${tis_list.collect { "'${it}'" }.join(' ')}; do
-    for tis in ${tis_list.join(' ')}; do
-        
+    count=\$(awk -v col1=${chrom} -v lower=${start} -v upper=${stop} 'NF >= 2 && \$1 == col1 && \$2 >= lower && \$2 <= upper {c++} END {print c+0}' "${pvar}")
+    if [ \$count -eq 0 ]; then
+        touch "${ensg}_temp"
+    else 
         plink2 \
             --pfile ${pgen.baseName} \
             --chr "${chrom}" \
             --from-bp "${start}" \
             --to-bp "${stop}" \
             --make-pgen \
-            --out "\${tis}_${ensg}_temp"
-        
+            --out "${ensg}_temp"
+    fi
+
+    for tis in ${tis_list.join(' ')}; do
+        #identify tis-associated eqtls from pfile
         python ${projectDir}/bin/qtl_filter.py \
             --qtl-folder ${params.gtexQTLfolder} \
             --index-folder ${params.gtexQTLindexFolder} \
             --gene "${ensg}" \
             --tis "\${tis}" \
-            --pvar "\${tis}_${ensg}_temp.pvar" \
+            --pvar "${ensg}_temp" \
             --output "temp_\${tis}_${ensg}.txt"            
         
         # any eqtl found
@@ -92,12 +95,8 @@ process GETVARS_BATCH {
             # exactly 1 eqtl
             if [ "\$num_lines" -eq 1 ]; then
                 plink2 \
-                    --pfile ${pgen.baseName} \
-                    --chr "${chrom}" \
-                    --from-bp "${start}" \
-                    --to-bp "${stop}" \
+                    --pfile "${ensg}_temp" \
                     --extract "temp_\${tis}_${ensg}.txt" \
-                    --force-intersect \
                     --make-pgen \
                     --out "\${tis}_${ensg}"  
                     
@@ -109,25 +108,21 @@ process GETVARS_BATCH {
                     --extract "temp_\${tis}_${ensg}.txt" \
                     --out "\${tis}_${ensg}"
                     
-                plink2 \
-                    --pfile ${pgen.baseName} \
-                    --chr "${chrom}" \
-                    --from-bp "${start}" \
-                    --to-bp "${stop}" \
-                    --extract "\${tis}_${ensg}.prune.in" \
-                    --force-intersect \
-                    --make-pgen \
-                    --out "\${tis}_${ensg}"
+                if [ -s "\${tis}_${ensg}.prune.in" ]; then
+                    plink2 \
+                        --pfile "${ensg}_temp" \
+                        --extract "\${tis}_${ensg}.prune.in" \
+                        --make-pgen \
+                        --out "\${tis}_${ensg}"
+                else
+                    echo "no lo-LD eqtls found for \${tis} and ${ensg}"
+                fi
                     
             # more than 1 eqtl, no ld pruning
             else
                 plink2 \
-                    --pfile ${pgen.baseName} \
-                    --chr "${chrom}" \
-                    --from-bp "${start}" \
-                    --to-bp "${stop}" \
+                    --pfile "${ensg}_temp" \
                     --extract "temp_\${tis}_${ensg}.txt" \
-                    --force-intersect \
                     --make-pgen \
                     --out "\${tis}_${ensg}"
             fi        
@@ -136,9 +131,8 @@ process GETVARS_BATCH {
              echo "no eqtls found for \${tis} and ${ensg}"
         fi
         
-        rm -f *temp*
     done
-    
+    rm -f *temp*
     
     """
 }
