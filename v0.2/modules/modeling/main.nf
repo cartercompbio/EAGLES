@@ -67,6 +67,7 @@ process FIT_AND_SCORE {
     tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl)
     val(model_type)
     val(thres)
+    path(train)
 
     output:
     tuple val(tis), val(ensg), path("*.pkl"), path("*_scores.tsv")
@@ -83,7 +84,7 @@ process FIT_AND_SCORE {
         --model ${model_type} \
         --gene ${ensg} \
         --qtl ${qtl} \
-        --samples ${params.train} \
+        --samples ${train} \
         --thres ${thres} \
         --model_output "${tis}_${ensg}.pkl" \
         --score_output "${tis}_${ensg}"
