@@ -32,7 +32,9 @@ process FITMODEL{
 
 process MODELSCORE {
     cpus 1
-    memory 32.GB
+    memory { 8.GB * task.attempt }
+    maxRetries 4
+    maxForks 50
     publishDir params.outdir + '/scores'
     
     input:
