@@ -5,6 +5,8 @@
 
 params.highld = "/cellar/users/dlaub/projects/nci-gs/.pixi/envs/plinkqc/lib/R/library/plinkQC/extdata/high-LD-regions-hg38-GRCh38.bed"
 
+include { remove_chr_prefix; recode_study_var_ids; plink_stats; ac_gt_snps; prune; identity_by_descent; filter_reference; merge_study_ref; pca; plot_stats; plot_ibd; plot_pca } from '../modules/plinkqc'
+
 workflow {
     study = Channel.fromFilePairs("${params.study}.{pgen,pvar,psam}", size: 3)
     ref = Channel.fromFilePairs("${params.ref}.{pgen,pvar,psam}", size: 3)
