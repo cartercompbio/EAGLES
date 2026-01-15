@@ -3,8 +3,9 @@ import pandas as pd
 import joblib
 import os
 import argparse
-from sklearn.linear_model import ElasticNetCV, RidgeCV
+from sklearn.linear_model import ElasticNetCV, RidgeCV, LinearRegression
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import xgboost as xgb
@@ -151,6 +152,24 @@ def fit_PCR(X_scaled, cov_scaled, y, scaler, thres):
     
     return snp_model
 
+def tune_rf(blank_model, x_train,y_train, **kwargs):
+    try:
+        parameter_grid = kwargs['parameter_grid']
+    except:
+        parameter_grid = {
+           'max_samples':[0.2, 0.25, 0.3, 0.35, 0.4],
+           'n_estimators': [50,75,100, 125, 150],
+           'max_depth':[2, 5, 10, 15,20],
+            'min_samples_split':[2, 4, 6, 8, 10],
+            'min_samples_leaf':[1,3,5,7,9]
+        }
+    
+    model_grid = GridSearchCV(blank_model, parameter_grid, verbose = 0)
+    model_grid.fit(x_train,y_train)
+    
+    return model_grid.best_params_
+
+
 def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     scaler = StandardScaler()
     temp = X.join(cov)
@@ -163,7 +182,8 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     elif model_type == "ridge":
         model = RidgeCV()
     elif model_type == "rf":
-        model = RandomForestRegressor(n_estimators=100)
+        best_params = tune_rf(RandomForestRegressor(random_state = 100), X_cov_scaled, y)
+        model = RandomForestRegressor(**best_params, random_state = 100)
     elif model_type == "xgb":
         model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
     elif model_type == "pcr":
@@ -201,7 +221,7 @@ def main():
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
     parser.add_argument("--samples", required=True, help="training sample list, one per line")
-    parser.add_argument("--thres", required=False, help="for pcr regression, limits number of PCs", default = 1)
+    parser.add_argument("--thres", required=False, help="for pcr regression, limits number of PCs", default = 1.0, type=float)
     parser.add_argument("--qtl", required=False, help="Path to QTL slope file")
 
     args = parser.parse_args()
