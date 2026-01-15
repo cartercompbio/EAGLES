@@ -65,6 +65,8 @@ process GETVARS_BATCH {
     
     script:
     """
+    #given window specified by (chrom, start-stop) determine how many variants are present
+    #generate slice of pfile with these variants
     count=\$(awk -v col1=${chrom} -v lower=${start} -v upper=${stop} 'NF >= 2 && \$1 == col1 && \$2 >= lower && \$2 <= upper {c++} END {print c+0}' "${pvar}")
     if [ \$count -eq 0 ]; then
         touch "${ensg}_temp"
