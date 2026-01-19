@@ -20,11 +20,11 @@ params.outdir = params.debug ?
     "/cellar/shared/carterlab/projects/eagle/v0.2/debug/${params.mode}_${timestamp}" :
     
     //final_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.2/heritable_genes_8000_out/${params.mode}"
+    "/cellar/shared/carterlab/projects/eagle/v0.2/whole_blood/${params.mode}"
 
 
 params.modes = [
-    predixcan: [ 
+    elasticnet: [ 
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
@@ -32,7 +32,7 @@ params.modes = [
         ldmode: "ldnone"
     ],
     
-    predixcanLDStrict: [
+    elasticnetLDStrict: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
@@ -40,7 +40,7 @@ params.modes = [
         ldmode: "ldstrict"
     ],
 
-    predixcanLDMed: [
+    elasticnetLDMed: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
@@ -48,7 +48,7 @@ params.modes = [
         ldmode: "ldmed"
     ],
     
-    predixcanLDLax: [ 
+    elasticnetLDLax: [ 
         upstream: 1000000,
         downstream: 1000000,
         threshold: 1,
@@ -69,6 +69,22 @@ params.modes = [
         downstream: 1000000,
         threshold: 1,
         model: "rf",
+        ldmode: "ldlax"
+    ],
+    
+    xgbLDMed: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "xgb",
+        ldmode: "ldmed"
+    ],
+
+    xgbLDLax: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "xgb",
         ldmode: "ldlax"
     ],
     
@@ -96,7 +112,7 @@ params.modes = [
         ldmode: "ldlax"
     ],
     
-    emagma: [
+    pcregression: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 0.999,
@@ -104,7 +120,7 @@ params.modes = [
         ldmode: "ldnone"
     ],
     
-    emagmaLDStrict: [
+    pcregressionLDStrict: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 0.999,
@@ -112,7 +128,7 @@ params.modes = [
         ldmode: "ldstrict"
     ],
     
-    emagmaLDMed: [
+    pcregressionLDMed: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 0.999,
@@ -120,7 +136,7 @@ params.modes = [
         ldmode: "ldmed"
     ],
     
-    emagmaLDLax: [
+    pcregressionLDLax: [
         upstream: 1000000,
         downstream: 1000000,
         threshold: 0.999,
