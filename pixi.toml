@@ -1,6 +1,6 @@
 [project]
 name = "EAGLES"
-authors = ["noa-popko <nopopko@ucsd.edu>"]
+authors = ["noa-popko <nopopko@ucsd.edu>", "douglas-meyer <domeyer@ucsd.edu>"]
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64"]
 
@@ -12,6 +12,7 @@ numpy = "*"
 scikit-learn = "*"
 nextflow = "*"
 plink2 = "*"
+optuna = "*"
 
 [tasks]
 score = "nextflow run single_gene_score.nf"
