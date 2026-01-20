@@ -14,6 +14,7 @@ nextflow = "*"
 plink2 = "*"
 optuna = "*"
 xgboost = "*"
+shap = "*"
 
 [tasks]
 score = "nextflow run single_gene_score.nf"
