@@ -3,7 +3,8 @@ params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/gtex_egene_gene_info.ts
 params.europfile = "/cellar/users/domeyer/EAGLE/test_expr/ld_reference/GTEx.qc_passed.EUR"
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
-params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_no_predixcan_missing_snps.tsv"
+//
+
 
 // GTEX PARAMETERS
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
@@ -20,36 +21,15 @@ params.outdir = params.debug ?
     "/cellar/shared/carterlab/projects/eagle/v0.3/debug/${params.mode}_${timestamp}" :
     
     //final_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.3/whole_blood/${params.mode}"
-
-// GENERAL PARAMETERS
-params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/gtex_egene_gene_info.tsv"
-params.europfile = "/cellar/users/domeyer/EAGLE/test_expr/ld_reference/GTEx.qc_passed.EUR"
-params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
-params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
-//params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_0_01.tsv"
-//params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/tissue_gene_heritability_no_predixcan_missing_snps.tsv"
-params.heritability = "/cellar/users/domeyer/EAGLE/test_expr/whole_blood_heritability.tsv"
-
-// GTEX PARAMETERS
-params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
-params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
-//params.covariates  = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/gtex.eigenvec"
-//params.covariates = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/genome_pcs_age_sex.tsv"
-params.covariates = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/age_sex.tsv"
-params.train = "/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
-
-params.mode = "predixcan" //default MODE
-
-def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
-params.debug = false
-
-params.outdir = params.debug ? 
-    //debug_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.2/debug/${params.mode}_${timestamp}" :
+    "/cellar/shared/carterlab/projects/eagle/v0.3/whole_blood_test100/${params.mode}"
     
-    //final_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.2/whole_blood/${params.mode}"
+    
+params.heritability = params.debug ? 
+    //debug file
+    "/cellar/users/domeyer/EAGLE/test_expr/whole_blood_heritability_100.tsv" :
+    
+    //full file
+    "/cellar/users/domeyer/EAGLE/test_expr/whole_blood_heritability.tsv"
 
 params.modes = [
     elasticnet: [ 
@@ -265,14 +245,9 @@ workflow {
             tuple(row.TISSUE, row.ENSG)
         }
     
-    if (params.debug) {
-        filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
-            .groupTuple(by: [1, 2, 3, 4]) 
-            .take(30)  
-    } else {
-        filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
-            .groupTuple(by: [1, 2, 3, 4]) 
-    }
+
+    filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
+        .groupTuple(by: [1, 2, 3, 4]) 
     
         
     switch(mode_params.ldmode){

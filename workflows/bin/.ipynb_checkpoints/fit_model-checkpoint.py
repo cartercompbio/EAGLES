@@ -5,14 +5,12 @@ import os
 import argparse
 from sklearn.linear_model import ElasticNetCV, RidgeCV, LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import GridSearchCV, cross_validate
+from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-import optuna
 import xgboost as xgb
 from pgenlib import PgenReader
 import numpy as np
-
 
 
 def load_pgen_data(pgen_path, psam_path, pvar_path):
@@ -120,14 +118,9 @@ def load_data(pgen_path, psam_path, pvar_path, expression_path, covar_path, samp
     else:
         common_samples = list(set(y.index)&set(X.index)&set(cov.index))
         
+    X = X.loc[common_samples]
     y = y.loc[common_samples]
-    # impose outlier filter based on https://doi.org/10.1186/s13059-025-03709-0
-    # outliers are >5TPM and >Q3 + 5*IQR
-    outlier_thres = max([y.quantile(0.75) + 5*(y.quantile(0.75) - y.quantile(0.25)), 5])
-    y = y[y<=outlier_thres]
-        
-    X = X.loc[y.index]
-    cov = cov.loc[y.index]
+    cov = cov.loc[common_samples]
     return X, y, cov
 
 def pca_transform(g, thres = 0.999):
@@ -177,72 +170,6 @@ def tune_rf(blank_model, x_train,y_train, **kwargs):
     return model_grid.best_params_
 
 
-
-def objective(trial, X, y, model_type, penalty = 1):
-    if model_type == 'xgb':
-        params = {
-            'objective': 'reg:squarederror',
-            'eval_metric': 'rmse',
-            'booster':'gbtree',
-
-            'lambda': trial.suggest_float('lambda', 0.1, 1000, log=True),
-            'alpha': trial.suggest_float('alpha', 0.1, 1000, log=True),
-
-
-            'max_depth': trial.suggest_int('max_depth', 2, 10),
-            'eta': trial.suggest_float('eta', 0.01, 0.5, log=True),
-            'gamma': trial.suggest_float('gamma', 1e-2, 1000, log=True),
-            'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
-
-            'subsample': trial.suggest_float('subsample', 0.2, 0.8),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 0.8),
-            'colsample_bylevel': trial.suggest_float('colsample_bylevel', 0.5, 0.8),
-
-            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
-            'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-            'random_state': 100        
-        }
-        model = xgb.XGBRegressor(**params)
-    elif model_type == 'rf':
-        params = {
-            'max_samples': trial.suggest_float('max_samples', 0.2, 0.8),
-            'n_estimators': trial.suggest_int('n_estimators', 50, 500),
-            'max_depth': trial.suggest_int('max_depth', 2, 20),
-            'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 9),
-            'random_state':100
-        }
-        model = RandomForestRegressor(**params)
-    else:
-        raise ValueError('valid options are "xgb" or "rf"')
-    # Perform cross-validation
-    cv_results = cross_validate(
-        model, X, y, 
-        cv=5, 
-        scoring='neg_root_mean_squared_error',
-        return_train_score=True
-    )
-    
-    train_score = -cv_results['train_score'].mean()
-    val_score = -cv_results['test_score'].mean()
-    
-    overfit_gap = max([train_score - val_score, 0])
-    
-    #penalize score if it overfits
-    return val_score + penalty*overfit_gap
-
-def tune_model(X, y, model_type):
-
-    study = optuna.create_study(
-        direction='minimize',
-        sampler=optuna.samplers.TPESampler(seed=100)
-    )
-
-    study.optimize(lambda trial: objective(trial, X, y, model_type),
-                   n_trials=200, show_progress_bar=False)
-    
-    return study.best_params
-
 def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     scaler = StandardScaler()
     temp = X.join(cov)
@@ -255,11 +182,10 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     elif model_type == "ridge":
         model = RidgeCV()
     elif model_type == "rf":
-        best_params = tune_model(X_cov_scaled, y, model_type)
+        best_params = tune_rf(RandomForestRegressor(random_state = 100), X_cov_scaled, y)
         model = RandomForestRegressor(**best_params, random_state = 100)
     elif model_type == "xgb":
-        best_params = tune_model(X_cov_scaled, y, model_type)
-        model = xgb.XGBRegressor(**best_params, random_state = 100)
+        model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
     elif model_type == "pcr":
         return {"scaler":scaler, "model":fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres), "feature_names":feat_list}
     elif model_type == "flipallele":
@@ -291,7 +217,7 @@ def main():
     parser.add_argument("--pvar", required=True, help="path to .pvar file")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
     parser.add_argument("--covariates", required=True, help="Path to covariate file")
-    parser.add_argument("--model", choices=["elasticnet", "rf", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
+    parser.add_argument("--model", choices=["elasticnet", "ridge", "rf", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
     parser.add_argument("--samples", required=True, help="training sample list, one per line")
