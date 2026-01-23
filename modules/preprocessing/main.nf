@@ -1,6 +1,8 @@
 process RENAMEVARIANTS{
     cpus 1
-    memory 16.GB
+    memory { 8.GB * task.attempt }
+    errorStrategy 'retry'
+    maxRetries 3
     
     input:
     val pfile_prefix
@@ -10,12 +12,17 @@ process RENAMEVARIANTS{
     
     script:
     def basename = new File(pfile_prefix).name
+    def mem_mb = Math.min(
+        (0.95 * task.memory.toMega()).toLong(),
+        1024
+    )
     """
     plink2 \\
         --pfile ${pfile_prefix} \\
         --set-all-var-ids @:#:\\\$r:\\\$a \\
         --make-pgen \\
         --new-id-max-allele-len 1000 \\
+        --memory ${mem_mb} \\
         --out ${basename}_renamed
     """
 }
@@ -64,6 +71,10 @@ process GETVARS_BATCH {
 
     
     script:
+    def mem_mb = Math.min(
+        (0.95 * task.memory.toMega()).toLong(),
+        1024
+    )    
     """
     #given window specified by (chrom, start-stop) determine how many variants are present
     #generate slice of pfile with these variants
@@ -77,6 +88,7 @@ process GETVARS_BATCH {
             --from-bp "${start}" \
             --to-bp "${stop}" \
             --make-pgen \
+            --memory ${mem_mb} \
             --out "${ensg}_temp"
     fi
 
@@ -100,6 +112,7 @@ process GETVARS_BATCH {
                     --pfile "${ensg}_temp" \
                     --extract "temp_\${tis}_${ensg}.txt" \
                     --make-pgen \
+                    --memory ${mem_mb} \
                     --out "\${tis}_${ensg}"  
                     
             # more than 1 eqtl and ld prune enabled
@@ -108,6 +121,7 @@ process GETVARS_BATCH {
                     --indep-pairwise ${window} ${r2} \
                     --pfile ${params.europfile}  \
                     --extract "temp_\${tis}_${ensg}.txt" \
+                    --memory ${mem_mb} \
                     --out "\${tis}_${ensg}"
                     
                 if [ -s "\${tis}_${ensg}.prune.in" ]; then
@@ -115,6 +129,7 @@ process GETVARS_BATCH {
                         --pfile "${ensg}_temp" \
                         --extract "\${tis}_${ensg}.prune.in" \
                         --make-pgen \
+                        --memory ${mem_mb} \
                         --out "\${tis}_${ensg}"
                 else
                     echo "no lo-LD eqtls found for \${tis} and ${ensg}"
@@ -126,6 +141,7 @@ process GETVARS_BATCH {
                     --pfile "${ensg}_temp" \
                     --extract "temp_\${tis}_${ensg}.txt" \
                     --make-pgen \
+                    --memory ${mem_mb} \
                     --out "\${tis}_${ensg}"
             fi        
         #no eqtls found    
