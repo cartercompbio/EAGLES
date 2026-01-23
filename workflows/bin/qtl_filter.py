@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import pandas as pd
 import pickle
 import os
 import argparse
@@ -77,6 +78,53 @@ def load_by_id(filename, index_file, gene, col_name = 'SNP'):
                 values.append(line.split(sep)[row_pos])
 
         return values
+    
+def load_slopes(filename, index_file, gene, **kwargs):
+    '''
+    kwargs:
+        var_col: string, which column from filename table to use as variant index
+        val_col: string, which column from filename table to use as eqtl slope values
+        
+    returns pandas.Series
+    
+    '''
+    
+    try:
+        var_col = kwargs['var_col']
+    except KeyError:
+        var_col = 'SNP'
+        
+    try:
+        val_col = kwargs['val_col']
+    except:
+        val_col = 'slope'
+
+    if filename.endswith('.csv'):
+        sep = ','
+    elif filename.endswith('.tsv'):
+        sep = '\t'
+    else:
+        raise ValueError(f'filename must be .csv or .tsv, not {filename}')
+
+    with open(index_file, 'rb') as idx:
+        id_ranges = pickle.load(idx)
+
+    if gene not in id_ranges:
+        return pd.Series()
+
+    start_byte,end_byte = id_ranges[gene]
+
+    with open(filename, 'rb') as infile:
+        l = next(infile).decode().strip().split(sep)
+        infile.seek(start_byte)
+
+        values = []
+        while infile.tell() < end_byte:
+            line = infile.readline().decode().strip()
+            if line:
+                values.append(line.split(sep))
+                
+        return pd.DataFrame(values, columns = l).set_index(var_col)[val_col]
     
 def variant_ids_from_pvar(pvar):
     with open(pvar, 'r') as file:

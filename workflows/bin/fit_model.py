@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import pandas as pd
 import joblib
 import os
@@ -13,6 +14,7 @@ import xgboost as xgb
 from pgenlib import PgenReader
 import numpy as np
 
+from qtl_filter import load_slopes
 
 
 def load_pgen_data(pgen_path, psam_path, pvar_path):
@@ -243,7 +245,52 @@ def tune_model(X, y, model_type):
     
     return study.best_params
 
-def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
+class AlleleCount:
+    def __init__(self):
+        self.coef_ = None
+        self.intercept_ = None
+        self.feature_names_in_ = None
+    
+    def fit(self, X, eqtl):
+        """
+        Fit AlleleCount model using sign of eqtl slopes.
+        
+        
+        Parameters:
+            X : pandas dataframe with training sample genotype data
+            
+            eqtl : pandas series with values representing eqtl slopes (or otherwise
+                    quantifying prior defined relationship between variants and the modeled gene)
+            
+        Returns:
+            self : object
+        """
+        
+        qtl_ser = eqtl[eqtl.index.isin(X.columns)].astype(float)
+        
+        self.intercept_ = 2*(qtl_ser<0).sum()
+        self.coef_ = np.array(2*(qtl_ser>0) - 1)
+        self.feature_names_in_ = np.array(qtl_ser.index)
+            
+    def predict(self, X):
+        """
+        Predict by counting expression-associated alleles
+
+        Parameters:
+        X : array-like, shape (n_samples, n_features)
+            Samples
+        
+        Returns:
+        y_pred : array, shape (n_samples,)
+            Returns predicted values
+        """
+        if self.coef_ is None or self.intercept_ is None:
+            raise ValueError("Model must be fitted before making predictions")
+        
+        X = np.array(X)
+        return X @ self.coef_ + self.intercept_
+
+def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
     scaler = StandardScaler()
     temp = X.join(cov)
     X_cov_scaled = pd.DataFrame(scaler.fit_transform(temp), index = temp.index, columns = temp.columns)
@@ -263,16 +310,23 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_df=None, gene_id=None):
     elif model_type == "pcr":
         return {"scaler":scaler, "model":fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres), "feature_names":feat_list}
     elif model_type == "flipallele":
-        if qtl_df is None:
-            raise ValueError("flipallele model requires --qtl input")
-        X_snps = X[[c for c in X.columns if c in qtl_df.index]].copy()
-        #Xf, flip_mask = apply_flipping(X_snps, qtl_df)
-        flip_mask = apply_flipping(X_snps, qtl_df)
-        return {
-            "feature_names": X_snps.columns.tolist(),
-            "flip_mask": flip_mask,
-            "gene": gene_id
-        }
+        model = AlleleCount()
+        model.fit(X, qtl_ser)
+        
+        return {'model':model, 'feature_names':model.feature_names_in_}
+        
+    
+    
+    #    if qtl_df is None:
+    #        raise ValueError("flipallele model requires --qtl input")
+    #    X_snps = X[[c for c in X.columns if c in qtl_df.index]].copy()
+    #    #Xf, flip_mask = apply_flipping(X_snps, qtl_df)
+    #    flip_mask = apply_flipping(X_snps, qtl_df)
+    #    return {
+    #        "feature_names": X_snps.columns.tolist(),
+    #        "flip_mask": flip_mask,
+    #        "gene": gene_id
+    #    }
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -297,6 +351,7 @@ def main():
     parser.add_argument("--samples", required=True, help="training sample list, one per line")
     parser.add_argument("--thres", required=False, help="for pcr regression, limits number of PCs", default = 1.0, type=float)
     parser.add_argument("--qtl", required=False, help="Path to QTL slope file")
+    parser.add_argument("--qtl-index", required=False, help="Path to QTL slope index file")
 
     args = parser.parse_args()
     args.gene = clean_gene_id(args.gene)
@@ -312,9 +367,10 @@ def main():
         y = y_all[args.gene]
 
     # load QTL table for flipped option
-    qtl_df = load_qtl_table(args.qtl, args.gene) if args.model == "flipallele" else None
+    qtl_ser = load_slopes(args.qtl, args.qtl_index, args.gene).astype(float) if args.model == "flipallele" else None
+    qtl_ser = qtl_ser[qtl_ser.index.isin(X)]
 
-    model = fit_model(X, y,cov, args.model, args.thres, qtl_df=qtl_df, gene_id=args.gene)
+    model = fit_model(X, y,cov, args.model, args.thres, qtl_ser=qtl_ser, gene_id=args.gene)
     joblib.dump(model, args.output)
     print(f"Model saved to: {args.output}")
 
