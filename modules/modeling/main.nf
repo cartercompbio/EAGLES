@@ -7,7 +7,7 @@ process FITMODEL{
     //errorStrategy 'ignore'
     
     input:
-    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl)
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl), path(qtl_index)
     val(model_type)
     val(thres)
     path(train)
@@ -26,6 +26,7 @@ process FITMODEL{
         --model ${model_type} \\
         --gene ${ensg} \\
         --qtl ${qtl} \\
+        --qtl-index ${qtl_index} \\
         --samples ${train} \\
         --thres ${thres} \\
         --output "${tis}_${ensg}.pkl"

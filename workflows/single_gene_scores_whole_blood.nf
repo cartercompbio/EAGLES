@@ -274,7 +274,8 @@ workflow {
             def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
             def covariate_path = file(params.covariates)
             def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
-            [tis,ensg,pgen,psam,pvar,expression_path,covariate_path, qtl_path]
+            def qtl_index = file("${params.gtexQTLfolder}/${tis}.pkl")
+            [tis,ensg,pgen,psam,pvar,expression_path,covariate_path, qtl_path, qtl_index]
         }
             
     models = FITMODEL(variants_for_model, mode_params.model, mode_params.threshold, params.train)
