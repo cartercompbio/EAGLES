@@ -12,7 +12,7 @@ def main():
     parser.add_argument("--psam", required=True, help="path to .psam file")
     parser.add_argument("--pvar", required=True, help="path to .pvar file")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--covariates", required=True)
+    parser.add_argument("--covariates", required=False, default = None, help="Path to covariate file")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -23,12 +23,13 @@ def main():
     cov = load_covariates(args.covariates)
 
     # Align features and covariates
-    common_samples = X.index.intersection(cov.index)
-    X = X.loc[common_samples]
-    cov = cov.loc[common_samples]
-
-    # Concatenate covariates
-    X = pd.concat([X, cov], axis=1)
+    if cov is not None:
+        common_samples = X.index.intersection(cov.index)
+        X = X.loc[common_samples]
+        cov = cov.loc[common_samples]
+    
+        # Concatenate covariates
+        X = pd.concat([X, cov], axis=1)
 
     # Load model
     model_dict = joblib.load(args.model)
@@ -40,7 +41,9 @@ def main():
 
     model = model_dict["model"]
     feature_names = model_dict["feature_names"]
-
+    
+    
+    #TODO: handle missing by populating with np.nan instead of raising error
     missing = set(feature_names) - set(X.columns)
     if missing:
         raise ValueError(f"Missing features in input data: {missing}")

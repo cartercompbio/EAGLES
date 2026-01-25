@@ -3,16 +3,13 @@ params.geneInfo = "/cellar/users/domeyer/EAGLE/test_expr/gtex_egene_gene_info.ts
 params.europfile = "/cellar/users/domeyer/EAGLE/test_expr/ld_reference/GTEx.qc_passed.EUR"
 params.gtexQTLfolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type"
 params.gtexQTLindexFolder = "/cellar/users/domeyer/data/gtex/cis_eqtls/GTEx_EUR_slope_tables_by_ENSG_rsid_snp/by_tissue_type_index"
-//
-
 
 // GTEX PARAMETERS
 params.pfile = "/cellar/users/nopopko/projects/eagles/GTEx_plinkqc/qc_output/GTEx.qc_passed"
 params.expressionfolder = "/cellar/users/domeyer/data/gtex/expression/by_tissue"
-params.covariates = "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/age_sex.tsv"
 params.train = "/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
 
-params.mode = "predixcan" //default MODE
+params.mode = "elasticnet" //default MODE
 
 def timestamp = new Date().format('MMM-dd-yyyy-HH.mm')
 params.debug = false
@@ -21,7 +18,7 @@ params.outdir = params.debug ?
     "/cellar/shared/carterlab/projects/eagle/v0.3/debug/${params.mode}_${timestamp}" :
     
     //final_outdirectory
-    "/cellar/shared/carterlab/projects/eagle/v0.3/whole_blood_test100/${params.mode}"
+    "/cellar/shared/carterlab/projects/eagle/v0.3/whole_blood_nocov/${params.mode}"
     
     
 params.heritability = params.debug ? 
@@ -30,6 +27,14 @@ params.heritability = params.debug ?
     
     //full file
     "/cellar/users/domeyer/EAGLE/test_expr/whole_blood_heritability.tsv"
+    
+params.nocov = false
+params.covariates = params.nocov ?
+    //no covariates
+    null  :
+    
+    //covariate file to use
+    "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/age_sex.tsv"
 
 params.modes = [
     elasticnet: [ 
@@ -167,8 +172,9 @@ params.ldlax = [
 ]
 params.ldnone = [:]
 
-include { RENAMEVARIANTS; GETSTARTSTOP; GETVARS_BATCH } from '../modules/preprocessing'
+include { RENAMEVARIANTS; MAFFILTER; GETSTARTSTOP; GETVARS_BATCH } from '../modules/preprocessing'
 include { FITMODEL; MODELSCORE } from '../modules/modeling'
+include { SAVEPARAMS } from '../modules/logging'
 
 
 workflow {
@@ -197,6 +203,7 @@ workflow {
     }
     
     pfile_renamed = RENAMEVARIANTS(params.pfile)
+    pfile_filtered = MAFFILTER(pfile_renamed, params.train)
 
     tissue_names = Channel
         .fromPath("${params.gtexQTLfolder}/*.tsv")
@@ -252,10 +259,10 @@ workflow {
         
     switch(mode_params.ldmode){
         case "ldnone":
-            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_renamed, false, "", "")
+            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_filtered, false, "", "")
             break
         default:
-            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_renamed, true,  ld_params.ldWindow, ld_params.ldR)
+            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_filtered, true,  ld_params.ldWindow, ld_params.ldR)
             break
     }
     
@@ -272,7 +279,7 @@ workflow {
     variants_for_model = variants
         .map{tis,ensg,pgen,psam,pvar ->
             def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
-            def covariate_path = file(params.covariates)
+            def covariate_path =  (params.covariates != null && params.covariates != "") ? file(params.covariates) : []
             def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
             def qtl_index = file("${params.gtexQTLfolder}/${tis}.pkl")
             [tis,ensg,pgen,psam,pvar,expression_path,covariate_path, qtl_path, qtl_index]
@@ -283,8 +290,10 @@ workflow {
     variants_for_scores = variants
         .join(models, by: [0,1])
         .map{tis, ensg, pgen, psam, pvar, model_path ->
-        def covariate_path = file(params.covariates)
+        def covariate_path =  (params.covariates != null && params.covariates != "") ? file(params.covariates) : []
         [tis, ensg, pgen,psam,pvar, model_path, covariate_path]
     } 
     scores = MODELSCORE(variants_for_scores)
+    
+    SAVEPARAMS(mode_params, ld_params)
 }
