@@ -122,7 +122,7 @@ process GETVARS_BATCH {
     #generate slice of pfile with these variants
     count=\$(awk -v col1=${chrom} -v lower=${start} -v upper=${stop} 'NF >= 2 && \$1 == col1 && \$2 >= lower && \$2 <= upper {c++} END {print c+0}' "${pvar}")
     if [ \$count -eq 0 ]; then
-        touch "${ensg}_temp"
+        touch "${ensg}_temp.pvar"
     else 
         plink2 \
             --pfile ${pgen.baseName} \
@@ -141,7 +141,7 @@ process GETVARS_BATCH {
             --index-folder ${params.gtexQTLindexFolder} \
             --gene "${ensg}" \
             --tis "\${tis}" \
-            --pvar "${dd" \
+            --pvar "${ensg}_temp.pvar" \
             --output "temp_\${tis}_${ensg}.txt"            
         
         # any eqtl found
