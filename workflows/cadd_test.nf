@@ -241,14 +241,29 @@ workflow {
             [tis, ensg, pgen, psam, pvar]
         }
         
+
     variants_for_model = variants
-        .map{tis,ensg,pgen,psam,pvar ->
-            def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
-            def covariate_path = file(params.covariates)
-            def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
-            [tis,ensg,pgen,psam,pvar,expression_path,covariate_path, qtl_path]
+        .map { tis, ensg, pgen, psam, pvar ->
+            def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv", checkIfExists: true)
+            def covariate_path = file(params.covariates, checkIfExists: true)
+            def qtl_path = file("${params.gtexQTLfolder}/whole_blood.tsv", checkIfExists: true)
+            def qtl_index_path = file("${params.gtexQTLindexFolder}/whole_blood.pkl", checkIfExists: true)
+    
+            [tis, ensg, file(pgen, checkIfExists: true), file(psam, checkIfExists: true), file(pvar, checkIfExists: true),
+             expression_path, covariate_path, qtl_path, qtl_index_path]
         }
-            
+        .filter { tis, ensg, pgen, psam, pvar, expr, covar, qtl, qtl_index ->
+            def all_exist = pgen.exists() && psam.exists() && pvar.exists() &&
+                            expr.exists() && covar.exists() && qtl.exists() && qtl_index.exists()
+            if (!all_exist) {
+                println "Skipping $ensg in $tis — missing some input files"
+            }
+            all_exist
+    }
+
+
+
+
     models = FITMODEL(variants_for_model, mode_params.model, mode_params.threshold, params.train)
     
     variants_for_scores = variants
