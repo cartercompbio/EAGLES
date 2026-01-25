@@ -7,29 +7,37 @@ process FITMODEL{
     //errorStrategy 'ignore'
     
     input:
-    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl), path(qtl_index)
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates, stageAs: 'covariates*'), path(qtl), path(qtl_index)
     val(model_type)
     val(thres)
     path(train)
 
     output:
-    tuple val(tis), val(ensg), path("*.pkl")
+    tuple val(tis), val(ensg), path("*.pkl"), optional: true
     
     script:
+    def cov_arg = covariates instanceof List && covariates.isEmpty() ? "" : "--covariates ${covariates}"
     """
-    python ${projectDir}/bin/fit_model.py \\
-        --pgen ${pgen} \\
-        --psam ${psam} \\
-        --pvar ${pvar} \\
-        --expression ${expression} \\
-        --covariates ${covariates} \\
-        --model ${model_type} \\
-        --gene ${ensg} \\
-        --qtl ${qtl} \\
-        --qtl-index ${qtl_index} \\
-        --samples ${train} \\
-        --thres ${thres} \\
-        --output "${tis}_${ensg}.pkl"
+    #do not generate model for single snp
+    variant_count=\$(grep -c '^[^#]' ${pvar})
+    
+    if [ "\$variant_count" -gt 1 ]; then
+        python ${projectDir}/bin/fit_model.py \\
+            --pgen ${pgen} \\
+            --psam ${psam} \\
+            --pvar ${pvar} \\
+            --expression ${expression} \\
+            ${cov_arg} \\
+            --model ${model_type} \\
+            --gene ${ensg} \\
+            --qtl ${qtl} \\
+            --qtl-index ${qtl_index} \\
+            --samples ${train} \\
+            --thres ${thres} \\
+            --output "${tis}_${ensg}.pkl"
+    else
+        echo "Skipping ${tis}_${ensg}: Only \$variant_count variant(s) found in ${pvar}"
+    fi
     """ 
 }
 
@@ -41,18 +49,20 @@ process MODELSCORE {
     publishDir params.outdir + '/scores'
     
     input:
-    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(model), path(covariates)
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(model), path(covariates, stageAs: 'covariates*')
 
     output:
     tuple val(tis), val(ensg), path("*_scores.tsv")
     
     script:
+    def cov_arg = covariates instanceof List && covariates.isEmpty() ? "" : "--covariates ${covariates}"
+
     """
     python ${projectDir}/bin/model_score.py \\
         --pgen ${pgen} \\
         --psam ${psam} \\
         --pvar ${pvar} \\
-        --covariates ${covariates} \\
+        ${cov_arg} \\
         --model ${model} \\
         --output "${tis}_${ensg}_scores.tsv"
     """

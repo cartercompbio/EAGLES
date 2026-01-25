@@ -14,7 +14,7 @@ process RENAMEVARIANTS{
     def basename = new File(pfile_prefix).name
     def mem_mb = Math.min(
         (0.95 * task.memory.toMega()).toLong(),
-        1024
+        (task.memory.toMega() - 1024).toLong()
     )
     """
     plink2 \\
@@ -26,6 +26,48 @@ process RENAMEVARIANTS{
         --out ${basename}_renamed
     """
 }
+
+process MAFFILTER{
+    cpus 1
+    memory { 8.GB * task.attempt }
+    errorStrategy 'retry'
+    maxRetries 3
+    
+    input:
+    tuple path(pgen), path(pvar), path(psam)
+    path cohort
+    
+    output:
+    tuple path("*.pgen"), path("*.pvar"), path("*.psam")
+    
+    script:
+    def basename = pgen.baseName.replaceAll(/\.pgen$/, '')
+    def mem_mb = Math.min(
+        (0.95 * task.memory.toMega()).toLong(),
+        (task.memory.toMega() - 1024).toLong()
+    )
+    """
+    # Step 1: Identify SNPs with MAF > 0.01 in the cohort
+    plink2 \
+        --pfile ${basename} \
+        --keep ${cohort} \
+        --maf 0.01 \
+        --write-snplist \
+        --memory ${mem_mb} \
+        --threads 1 \
+        --out ${basename}_cohort_snps
+    
+    # Step 2: Filter original pfile (all samples) to keep only those SNPs
+    plink2 \
+        --pfile ${basename} \
+        --extract ${basename}_cohort_snps.snplist \
+        --make-pgen \
+        --memory ${mem_mb} \
+        --threads 1 \
+        --out ${basename}_maf_filtered
+    """
+}
+
 
 
 process GETSTARTSTOP{
@@ -73,7 +115,7 @@ process GETVARS_BATCH {
     script:
     def mem_mb = Math.min(
         (0.95 * task.memory.toMega()).toLong(),
-        1024
+        (task.memory.toMega() - 1024).toLong()
     )    
     """
     #given window specified by (chrom, start-stop) determine how many variants are present
@@ -99,7 +141,7 @@ process GETVARS_BATCH {
             --index-folder ${params.gtexQTLindexFolder} \
             --gene "${ensg}" \
             --tis "\${tis}" \
-            --pvar "${ensg}_temp" \
+            --pvar "${dd" \
             --output "temp_\${tis}_${ensg}.txt"            
         
         # any eqtl found

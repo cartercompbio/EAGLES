@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 
 import pandas as pd
+import numpy as np
+
+from functools import reduce
+
 import joblib
 import os
 import argparse
@@ -12,7 +16,7 @@ from sklearn.decomposition import PCA
 import optuna
 import xgboost as xgb
 from pgenlib import PgenReader
-import numpy as np
+
 
 from qtl_filter import load_slopes
 
@@ -67,6 +71,9 @@ def load_pgen_data(pgen_path, psam_path, pvar_path):
 
 
 def load_covariates(path):
+    if path is None:
+        return None
+    
     cov = pd.read_csv(path, sep="\t", index_col = 0)
     #if "#IID" in cov.columns:
     #    cov = cov.rename(columns={"#IID": "IID"})
@@ -112,24 +119,30 @@ def clean_gene_id(gene_id):
 def load_data(pgen_path, psam_path, pvar_path, expression_path, covar_path, samples = None):
     X = load_pgen_data(pgen_path, psam_path, pvar_path)
     cov = load_covariates(covar_path)
+    if cov is not None:
+        cov_samples = cov.index
+    else:
+        cov_samples = None
     
     y = pd.read_csv(expression_path, sep="\t", index_col=0)
     if y.shape[1] == 1:
         y = y.iloc[:, 0]
     
-    if samples is not None:
-        common_samples = list(set(y.index)&set(X.index)&set(cov.index)&samples)
-    else:
-        common_samples = list(set(y.index)&set(X.index)&set(cov.index))
+    
+    valid_items = [item for item in [y.index, X.index, cov_samples, samples] if item is not None]
+    common_samples = list(reduce(lambda x, y: set(x) & set(y), valid_items))
         
     y = y.loc[common_samples]
+    
     # impose outlier filter based on https://doi.org/10.1186/s13059-025-03709-0
     # outliers are >5TPM and >Q3 + 5*IQR
     outlier_thres = max([y.quantile(0.75) + 5*(y.quantile(0.75) - y.quantile(0.25)), 5])
     y = y[y<=outlier_thres]
         
     X = X.loc[y.index]
-    cov = cov.loc[y.index]
+    
+    if cov is not None:
+        cov = cov.loc[y.index]
     return X, y, cov
 
 def pca_transform(g, thres = 0.999):
@@ -144,15 +157,25 @@ def pca_transform(g, thres = 0.999):
 
 def fit_PCR(X_scaled, cov_scaled, y, scaler, thres):
     
-    pcs,loadings = pca_transform(pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_[:X_scaled.shape[1]]), thres)
+    X_for_pca = pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_[:X_scaled.shape[1]])
+    pcs,loadings = pca_transform(X_for_pca, thres)
+    
+    # Check if PCA returned any components
+    if pcs.shape[1] == 0:
+        return None
 
     pc_model = LinearRegression()
-    pc_model.fit(pcs.join(cov_scaled), y)
-
-    pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
-    temp = pd.Series(dict(zip(cov_scaled.columns, pc_model.coef_[pcs.shape[1]:])))
-    temp.index = temp.index.str.replace('cov|','')
-    coef_scaled = pd.concat([loadings.dot(pc_weights), temp])
+    
+    if cov_scaled is not None:
+        pc_model.fit(pcs.join(cov_scaled), y)
+        pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
+        temp = pd.Series(dict(zip(cov_scaled.columns, pc_model.coef_[pcs.shape[1]:])))
+        temp.index = temp.index.str.replace('cov|','')
+        coef_scaled = pd.concat([loadings.dot(pc_weights), temp])
+    else:
+        pc_model.fit(pcs, y)
+        pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
+        coef_scaled = loadings.dot(pc_weights)
 
     snp_model = LinearRegression()
     snp_model.coef_ = coef_scaled.values
@@ -292,7 +315,9 @@ class AlleleCount:
 
 def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
     scaler = StandardScaler()
-    temp = X.join(cov)
+    temp = X.copy()
+    if cov is not None:
+        temp = X.join(cov)
     X_cov_scaled = pd.DataFrame(scaler.fit_transform(temp), index = temp.index, columns = temp.columns)
     feat_list = list(temp.columns)
     del temp
@@ -308,25 +333,22 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
         best_params = tune_model(X_cov_scaled, y, model_type)
         model = xgb.XGBRegressor(**best_params, random_state = 100)
     elif model_type == "pcr":
-        return {"scaler":scaler, "model":fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres), "feature_names":feat_list}
+        if cov is None:
+            model = fit_PCR(X_cov_scaled, None, y, scaler, thres)
+        else:
+            model = fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres)
+            
+        if model is not None:
+            return {"scaler":scaler, "model":model, "feature_names":feat_list}
+        else:
+            return None
+    
     elif model_type == "flipallele":
         model = AlleleCount()
         model.fit(X, qtl_ser)
         
         return {'model':model, 'feature_names':model.feature_names_in_}
-        
-    
-    
-    #    if qtl_df is None:
-    #        raise ValueError("flipallele model requires --qtl input")
-    #    X_snps = X[[c for c in X.columns if c in qtl_df.index]].copy()
-    #    #Xf, flip_mask = apply_flipping(X_snps, qtl_df)
-    #    flip_mask = apply_flipping(X_snps, qtl_df)
-    #    return {
-    #        "feature_names": X_snps.columns.tolist(),
-    #        "flip_mask": flip_mask,
-    #        "gene": gene_id
-    #    }
+
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -344,7 +366,7 @@ def main():
     parser.add_argument("--psam", required=True, help="path to .psam file")
     parser.add_argument("--pvar", required=True, help="path to .pvar file")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
-    parser.add_argument("--covariates", required=True, help="Path to covariate file")
+    parser.add_argument("--covariates", required=False, default = None, help="Path to covariate file")
     parser.add_argument("--model", choices=["elasticnet", "rf", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
@@ -368,11 +390,13 @@ def main():
 
     # load QTL table for flipped option
     qtl_ser = load_slopes(args.qtl, args.qtl_index, args.gene).astype(float) if args.model == "flipallele" else None
-    qtl_ser = qtl_ser[qtl_ser.index.isin(X)]
+    if qtl_ser is not None:
+        qtl_ser = qtl_ser[qtl_ser.index.isin(X)]
 
     model = fit_model(X, y,cov, args.model, args.thres, qtl_ser=qtl_ser, gene_id=args.gene)
-    joblib.dump(model, args.output)
-    print(f"Model saved to: {args.output}")
+    if model is not None:
+        joblib.dump(model, args.output)
+        print(f"Model saved to: {args.output}")
 
 if __name__ == "__main__":
     main()
