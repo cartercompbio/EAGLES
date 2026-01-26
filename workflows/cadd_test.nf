@@ -276,7 +276,7 @@ workflow {
     variants_for_scores = variants
         .join(models, by: [0,1])
         .map{tis, ensg, pgen, psam, pvar, model_path ->
-        def covariate_path = file(params.covariates)
+        def covariate_path =  (params.covariates != null && params.covariates != "") ? file(params.covariates) : []
         [tis, ensg, pgen,psam,pvar, model_path, covariate_path]
     } 
     scores = MODELSCORE(variants_for_scores)
