@@ -22,7 +22,14 @@ params.outdir = params.debug ?
     
     //final_outdirectory
     "/cellar/shared/carterlab/projects/eagle/v0.2/whole_blood_cadd/${params.mode}"
-
+    
+params.nocov = false
+params.covariates = params.nocov ?
+    //no covariates
+    null  :
+    
+    //covariate file to use
+    "/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/age_sex.tsv"
 
 params.modes = [
     predixcan: [ 
@@ -245,7 +252,7 @@ workflow {
     variants_for_model = variants
         .map { tis, ensg, pgen, psam, pvar ->
             def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv", checkIfExists: true)
-            def covariate_path = file(params.covariates, checkIfExists: true)
+            def covariate_path =  (params.covariates != null && params.covariates != "") ? file(params.covariates) : []
             def qtl_path = file("${params.gtexQTLfolder}/whole_blood.tsv", checkIfExists: true)
             def qtl_index_path = file("${params.gtexQTLindexFolder}/whole_blood.pkl", checkIfExists: true)
     
