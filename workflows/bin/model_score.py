@@ -42,11 +42,9 @@ def main():
     model = model_dict["model"]
     feature_names = model_dict["feature_names"]
     
-    
-    #TODO: handle missing by populating with np.nan instead of raising error
     missing = set(feature_names) - set(X.columns)
-    if missing:
-        raise ValueError(f"Missing features in input data: {missing}")
+    for col in missing:
+        X[col] = np.nan
 
     # Order columns
     X_ordered = X[feature_names]
