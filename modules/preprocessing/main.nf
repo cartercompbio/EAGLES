@@ -196,3 +196,48 @@ process GETVARS_BATCH {
     
     """
 }
+
+process GATHERGENO{
+    cpus 1
+    memory { 8.GB * task.attempt }
+    maxRetries 4
+    errorStrategy 'retry'
+    maxForks 25
+    
+    input:
+     tuple val(tis), val(ensg), path(pgen), path(pvar), path(psam), path(model), path(covariates)
+    
+    output:
+    tuple val(tis), val(ensg), path("${tis}_${ensg}.pgen"), path("${tis}_${ensg}.psam"), path("${tis}_${ensg}.pvar"), path(model), path(covariates), optional: true
+    
+    script:
+    def mem_mb = Math.min(
+        (0.95 * task.memory.toMega()).toLong(),
+        (task.memory.toMega() - 1024).toLong()
+    )    
+    
+    """
+    python ${projectDir}/bin/snps_from_model.py \\
+        --covariates ${covariates} \\
+        --model ${model} \\
+        --pvar ${pvar} \\
+        --output "snplist.txt"
+        
+    
+        
+    if [ -f "snplist.txt" ]; then
+        
+        matching_snps=\$(awk 'NR==FNR{snps[\$1]; next} \$3 in snps' snplist.txt ${pvar} | wc -l)
+        
+        if [ "\$matching_snps" -gt 0 ]; then
+            plink2 \\
+                --pfile ${pgen.baseName} \\
+                --extract "snplist.txt" \\
+                --make-pgen \\
+                --memory ${mem_mb} \\
+                --out "${tis}_${ensg}"
+        fi
+    fi
+             
+    """
+}

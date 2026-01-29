@@ -311,7 +311,8 @@ class AlleleCount:
             raise ValueError("Model must be fitted before making predictions")
         
         X = np.array(X)
-        return X @ self.coef_ + self.intercept_
+        X = np.nan_to_num(X, nan=0.0) #handle missing values by ignoring them
+        return np.round(X @ self.coef_ + self.intercept_).astype(int)
 
 def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
     scaler = StandardScaler()
