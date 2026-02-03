@@ -30,7 +30,14 @@ params.modes = [
         model: "elasticnet",
         ldmode: "ldlax"
     ],
-
+    
+    randomforestLDStrict: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldstrict"
+    ],
     randomforestLDMed: [ 
         upstream: 1000000,
         downstream: 1000000,
@@ -47,6 +54,28 @@ params.modes = [
         ldmode: "ldlax"
     ],
     
+    randomforest: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldnone"
+    ],
+ 
+    xgb: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "xgb",
+        ldmode: "ldnone"
+    ],
+    xgbLDStrict: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "xgb",
+        ldmode: "ldstrict"
+    ],
     xgbLDMed: [ 
         upstream: 1000000,
         downstream: 1000000,
@@ -85,6 +114,14 @@ params.modes = [
         threshold: 1,
         model: "flipallele",
         ldmode: "ldlax"
+    ],
+    
+    flipAllele: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "flipallele",
+        ldmode: "ldnone"
     ],
     
     pcregression: [

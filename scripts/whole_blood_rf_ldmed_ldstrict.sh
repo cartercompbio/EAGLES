@@ -28,7 +28,7 @@ train="/cellar/users/domeyer/EAGLE/test_expr/eur_train_ids.txt"
 #covariates="/cellar/shared/carterlab/projects/eagle/v0.2/gtex_covar/age_sex.tsv"
 NFscript="/cellar/users/domeyer/repos/EAGLES/workflows/single_gene_scores_whole_blood.nf"
 
-for mode in elasticnetLDMed elasticnetLDStrict flipAlleleLDMed flipAlleleLDStrict pcregressionLDMed pcregressionLDStrict xgbLDMed xgbLDStrict randomforestLDMed randomforestLDStrict
+for mode in randomforestLDMed randomforestLDStrict
 do
     outdir="/cellar/shared/carterlab/projects/eagle/v0.3/whole_blood_nocov/$mode"
     
