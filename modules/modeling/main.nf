@@ -2,9 +2,9 @@ process FITMODEL{
     cpus 1
     memory { 8.GB * task.attempt }
     maxRetries 4
+    errorStrategy 'retry'
     publishDir params.outdir + '/models'
     maxForks 50
-    //errorStrategy 'ignore'
     
     input:
     tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates, stageAs: 'covariates*'), path(qtl), path(qtl_index)
@@ -45,6 +45,7 @@ process MODELSCORE {
     cpus 1
     memory { 8.GB * task.attempt }
     maxRetries 4
+    errorStrategy 'retry'
     maxForks 50
     publishDir params.outdir + '/scores'
     
