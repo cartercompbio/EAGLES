@@ -11,6 +11,7 @@ import statsmodels.api as sm
 import pickle
 
 from fit_model import AlleleCount
+from sklearn.linear_model import LinearRegression
 
 def main():
    
@@ -92,6 +93,8 @@ def main():
         
         if args.replace_nan is not None:
             X = X.fillna(args.replace_nan)
+        elif isinstance(model, LinearRegression):
+            X = X.fillna(0)
             
         ###
         # if features scaled during training, apply same scaler to X
