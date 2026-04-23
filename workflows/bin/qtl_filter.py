@@ -6,6 +6,16 @@ import os
 import argparse
 from functools import reduce
 
+def index_new_eqtl_tables(eqtl_folder, index_folder = None):
+    if index_folder is None:
+        index_folder = eqtl_folder
+        
+    for f in os.listdir(eqtl_folder):
+        t = f[:-4]
+        if f.endswith('.tsv') and not os.path.isfile(f'{index_folder}/{t}.pkl'):
+            t = f[:-4]
+            index_gtex_file(f'{eqtl_folder}/{t}.tsv', f'{index_folder}/{t}.pkl')        
+
 def index_gtex_file(filename, index_file):
     
     if filename.endswith('.csv'):

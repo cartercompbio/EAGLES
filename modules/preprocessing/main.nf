@@ -94,12 +94,8 @@ process GETSTARTSTOP{
 }
 
 process GETVARS_BATCH {
-    cpus 1
-    memory { 8.GB * task.attempt }
-    maxRetries 4
-    maxForks 50
     publishDir params.outdir + '/vars'
-    errorStrategy 'ignore'
+    label 'EAGLES_VAR'
     
     input:
     tuple val(tis_list), val(ensg), val(chrom), val(start), val(stop)
