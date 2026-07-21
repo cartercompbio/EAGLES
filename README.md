@@ -1,5 +1,5 @@
 # EAGLES
-eQTLs Aggregated for Gene LEvel Scores
+Evaluating Aggregated Gene Level eQTL Scores
 
 ## Set up pixi
 1. Install Pixi (if not already installed, see: https://pixi.sh/latest/installation/)
