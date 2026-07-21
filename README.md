@@ -22,7 +22,7 @@ pixi exec --manifest-path /path/to/pixi.toml nextflow run /nfpath/to/script.nf
 ```
 
 ## Set up conda environment with necessary packages
-conda install bioconda::nextflow=25.04.06 bioconda::plink2=2.0.0a.6.9 conda-forge::python=3.13.5 conda-forge::scipy=1.16.0 conda-forge::pandas=2.3.1 conda-forge::numpy=2.3.2 conda-forge::joblib=1.5.3 conda-forge::scikit-learn=1.9.0 conda-forge::optuna=4.9.0
+conda install bioconda::nextflow=25.04.06 bioconda::plink2=2.0.0a.6.9 conda-forge::python=3.13.5 conda-forge::scipy=1.16.0 conda-forge::pandas=2.3.1 conda-forge::numpy=2.3.2 conda-forge::joblib=1.5.3 conda-forge::scikit-learn=1.9.0 conda-forge::optuna=4.9.0 conda-forge::xgboost=3.3.0 conda-forge::shap=0.52.0
 
 ## Set up nextflow config file
 1. touch /cellar/users/<**yours**>/.nextflow/config
