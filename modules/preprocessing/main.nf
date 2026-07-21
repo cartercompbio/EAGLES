@@ -194,11 +194,8 @@ process GETVARS_BATCH {
 }
 
 process GATHERGENO{
-    cpus 1
-    memory { 8.GB * task.attempt }
-    maxRetries 4
-    errorStrategy 'retry'
-    maxForks 25
+    publishDir params.outdir + '/vars'
+    label 'EAGLES_VAR'
     
     input:
      tuple val(tis), val(ensg), path(pgen), path(pvar), path(psam), path(model), path(covariates)
@@ -214,9 +211,7 @@ process GATHERGENO{
     
     """
     python ${projectDir}/bin/snps_from_model.py \\
-        --covariates ${covariates} \\
         --model ${model} \\
-        --pvar ${pvar} \\
         --output "snplist.txt"
         
     

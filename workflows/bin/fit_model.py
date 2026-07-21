@@ -322,8 +322,14 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
     X_cov_scaled = pd.DataFrame(scaler.fit_transform(temp), index = temp.index, columns = temp.columns)
     feat_list = list(temp.columns)
     del temp
-
-    if model_type == "elasticnet":
+    
+    if model_type == "flipallele":
+        model = AlleleCount()
+        model.fit(X, qtl_ser)
+        return {'model':model, 'feature_names':model.feature_names_in_}
+    elif X_cov_scaled.shape[1]==1:
+        model = LinearRegression()
+    elif model_type == "elasticnet":
         model = ElasticNetCV(l1_ratio=0.5, cv=5, max_iter=10000)
     elif model_type == "ridge":
         model = RidgeCV()
@@ -336,6 +342,9 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
     elif model_type == "pcr":
         if cov is None:
             model = fit_PCR(X_cov_scaled, None, y, scaler, thres)
+        elif X.shape[1]==1:
+            model = LinearRegression()
+            model.fit(X_cov_scaled, y)
         else:
             model = fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres)
             
@@ -343,12 +352,6 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
             return {"scaler":scaler, "model":model, "feature_names":feat_list}
         else:
             return None
-    
-    elif model_type == "flipallele":
-        model = AlleleCount()
-        model.fit(X, qtl_ser)
-        
-        return {'model':model, 'feature_names':model.feature_names_in_}
 
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

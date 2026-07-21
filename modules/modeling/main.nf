@@ -14,10 +14,9 @@ process FITMODEL{
     script:
     def cov_arg = covariates instanceof List && covariates.isEmpty() ? "" : "--covariates ${covariates}"
     """
-    #do not generate model for single snp
     variant_count=\$(grep -c '^[^#]' ${pvar})
     
-    if [ "\$variant_count" -gt 1 ]; then
+    if [ "\$variant_count" -gt 0 ]; then
         python ${projectDir}/bin/fit_model.py \\
             --pgen ${pgen} \\
             --psam ${psam} \\
@@ -31,6 +30,13 @@ process FITMODEL{
             --samples ${train} \\
             --thres ${thres} \\
             --output "${tis}_${ensg}.pkl"
+            
+        # output is only optional for non-pcr model types
+        if [ "${model_type}" != "pcr" ] && [ ! -f "${tis}_${ensg}.pkl" ]; then
+            echo "Error: Expected output file ${tis}_${ensg}.pkl not created"
+            exit 1
+        fi
+        
     else
         echo "Skipping ${tis}_${ensg}: Only \$variant_count variant(s) found in ${pvar}"
     fi
