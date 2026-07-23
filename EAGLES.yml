@@ -1,0 +1,19 @@
+name: eagle_train
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - nextflow=25.04.06
+  - python=3.13.5
+  - plink2=2.0.0a.6.9
+  - numpy=2.3.2
+  - scipy=1.16.0
+  - pandas=2.3.1
+  - joblib
+  - scikit-learn=1.7.2
+  - optuna
+  - xgboost
+  - shap
+  - pgenlib
+  - statsmodels
+prefix: /carter/users/domeyer/installations/conda/miniconda3/envs/eagle_train
