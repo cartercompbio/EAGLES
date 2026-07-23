@@ -1,7 +1,8 @@
-name: eagle_train
+name: EAGLES
 channels:
   - conda-forge
   - defaults
+  - bioconda
 dependencies:
   - nextflow=25.04.06
   - python=3.13.5
@@ -16,4 +17,3 @@ dependencies:
   - shap
   - pgenlib
   - statsmodels
-prefix: /carter/users/domeyer/installations/conda/miniconda3/envs/eagle_train
