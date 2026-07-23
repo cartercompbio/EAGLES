@@ -119,7 +119,7 @@ conda run -n eagle python $scoreScript \
     + for best results, this should contain individuals from a single local ancestry label (e.g. [GRAFpop](https://www.ncbi.nlm.nih.gov/projects/gap/cgi-bin/GrafPop_README.html) )
 + pindex: file generated from EAGLES/workflows/bin/score_other_cohort.py (index_cohort)
 + model_folder: path to directory with trained EAGLES models
-    + [24 sets of pre-trained models] (tbd: zenodo link)
+    + [24 sets of pre-trained models](https://doi.org/10.5281/zenodo.21477399)
 + expr_table: tables with expression data used to evaluate model prediction accuracy
 + score_outdir: directory where outputs will be written
     1. feature_summary.tsv: shap values representing feature importances in the scored models
