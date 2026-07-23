@@ -89,11 +89,25 @@ fi
 
 mkdir -p $score_outdir
 conda run -n eagle python $scoreScript \
-    --pgen "$testSets/$cohort.pgen" \
-    --pvar "$testSets/$cohort.pvar" \
-    --psam "$testSets/$cohort.psam" \
-    --pindex "$testSets/$cohort.pkl" \
+    --pgen "$pfile.pgen" \
+    --pvar "$pfile.pvar" \
+    --psam "$pfile.psam" \
+    --pindex $pindex \
     --model-folder  $model_folder \
-    --outdir $score_outdir     \
+    --expr $expr_table \
+    --outdir $score_outdir \
     $replace_nan_arg
 ```
++ mode: which EAGLES mode was used to generate these models (see training for supported modes)
+    + alternatively you can include "--replace-nan 0" or not (if scoring linear models, --replace-nan must be specified)
++ pfile: plink2 prefix for genotypes to be scored
+    + for best results, this should contain individuals from a single local ancestry label (e.g. [GRAFpop](https://www.ncbi.nlm.nih.gov/projects/gap/cgi-bin/GrafPop_README.html) )
++ pindex: file generated from EAGLES/workflows/bin/score_other_cohort.py (index_cohort)
++ model_folder: path to directory with trained EAGLES models
+    + [24 sets of pre-trained models] (tbd: zenodo link)
++ expr_table: tables with expression data used to evaluate model prediction accuracy
++ score_outdir: directory where outputs will be written
+    1. feature_summary.tsv: shap values representing feature importances in the scored models
+    2. missing_counts.tsv: summary of model feature snps missing from input pfile
+    3. model_performance.tsv: summary of model performance in input cohort
+    4. scores.tsv: prediction values from each model for each sample in cohort
