@@ -3,7 +3,8 @@
 //     nextflow run plinkqc.nf -c configs/chr${chr}.config
 // done
 
-params.highld = "/cellar/users/dlaub/projects/nci-gs/.pixi/envs/plinkqc/lib/R/library/plinkQC/extdata/high-LD-regions-hg38-GRCh38.bed"
+params.highld = "../data/high-LD-regions-hg38-GRCh38.bed"
+// copied from https://github.com/meyer-lab-cshl/plinkQC/blob/master/inst/extdata/high-LD-regions-hg38-GRCh38.bed
 
 include { remove_chr_prefix; recode_study_var_ids; plink_stats; ac_gt_snps; prune; identity_by_descent; filter_reference; merge_study_ref; pca; plot_stats; plot_ibd; plot_pca } from '../modules/plinkqc'
 
