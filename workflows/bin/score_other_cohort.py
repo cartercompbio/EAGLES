@@ -13,6 +13,23 @@ import pickle
 from fit_model import AlleleCount
 from sklearn.linear_model import LinearRegression
 
+def index_cohort(pvar_in, pkl_out):
+    snp_index = {}
+    with open(pvar_in, 'r') as file:
+        h = '##'
+        while h.startswith('##'):
+            h = next(file)
+
+        h = h.split('\t')
+        pos_index = h.index('ID')
+
+        for i,line in enumerate(file):
+            var_id = line.strip().split('\t')[pos_index]
+            snp_index[var_id] = i
+
+    with open(pkl_out, 'wb') as file:
+        pickle.dump(snp_index, file)
+
 def main():
    
     parser = argparse.ArgumentParser()
