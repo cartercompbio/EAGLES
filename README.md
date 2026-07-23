@@ -33,13 +33,20 @@ nextflow ... -c EAGLES/conf/EAGLES.config
 ```
 
 ## PlinkQC your genotype tables:
-adapted from [somebody et al.] (paper/github link)
+adapted from [Syed et al. 2025](https://github.com/meyer-lab-cshl/plinkQC)
 ```bash
 for chr in {1..22} X; do
-  nextflow run EAGLES/workflows/plinkqc.nf \
-    -c EAGLES/conf/chr${chr}.config
+    nextflow run EAGLES/workflows/plinkqc.nf \
+      --Cohort_name "chr${chr}" \
+      --study "$pfile_to_qc" \
+      --ref "$pfile_ref" \
+      --qc_dir $qc_dir       
 done
 ```
++ pfile_to_qc: plink2 genotype file (sliced from a single chromosome)
++ pfile_ref: plink2 genotype reference file (e.g. 1000 Genomes project)
++ qc_dir: output directory 
+
 
 ## Use EAGLES to train models
 ```bash
