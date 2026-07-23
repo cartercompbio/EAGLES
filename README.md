@@ -32,6 +32,14 @@ B. include for EAGLES-specific pipeline runs (note EAGLES will not work without 
 nextflow ... -c EAGLES/conf/EAGLES.config
 ```
 
+## PlinkQC your genotype tables:
+adapted from [somebody et al.] (paper/github link)
+```bash
+for chr in {1..22} X; do
+  nextflow run EAGLES/workflows/plinkqc.nf \
+    -c EAGLES/conf/chr${chr}.config
+done
+```
 
 ## Use EAGLES to train models
 ```bash
