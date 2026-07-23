@@ -1,7 +1,7 @@
 # EAGLES
 Evaluating Aggregated Gene Level eQTL Scores
 
-EAGLES provides pipelines to facilitate eQTL-based model training as well as scoring from pre-trained models. More detailed documentation may be found <here>. Pre-trained models are available <here>.
+EAGLES provides pipelines to facilitate eQTL-based model training as well as scoring from pre-trained models. More detailed documentation may be found <here>. Pre-trained models are available through [zenodo](https://doi.org/10.5281/zenodo.21477399).
 
 ## Installation
 ```bash
