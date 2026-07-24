@@ -64,13 +64,14 @@ conda run -n eagles nextflow EAGLES/workflows/single_gene_scores[_train_only].nf
 ```
 + geneInfo: gene information file (see EAGLES/data/gtex_egene_gene_info.tsv for formatting)
 + europfile: plink2 prefix, will be used for LD pruning
-+ heritability: .tsv file with tissue,gene pairs (see EAGLES/data/<>.tsv for formatting)
-+ gtexQTLfolder: folder containing single tissue eQTL tables (see EAGLES/data/<>.tsv for formatting)
-    + note that file names must match tissue labels in heritability
++ heritability: .tsv file with tissue,gene pairs (see EAGLES/data/test/heritability_test.tsv for formatting)
++ gtexQTLfolder: folder containing single tissue eQTL tables (see EAGLES/data/test/gtexQTLfolder for formatting)
+    + note that file names must match tissue labels in heritability (e.g. EAGLES/data/test/gtexQTLfolder/whole_blood.tsv)
 + gtexQTLindexFolder: folder containing .pkl index files yielded from EAGLES/workflows/bin/qtl_filter.py (index_new_eqtl_tables)
 + pfile: plink2 prefix, will be used for model training
 + train: txt file, defines the subset of samples in pfile to be used for training
-+ expressionfolder: directory containing files like "gene.tsv" (see EAGLES/data/<>.tsv for formatting)
++ expressionfolder: directory containing files like "gene.tsv" (see EAGLES/data/test/expressionfolder for formatting)
+    + expected path structure is tissue/gene.tsv (e.g. EAGLES/data/test/expressionfolder/whole_blood/ENSG00000283064.tsv)
 + mode: which EAGLES mode (model type and LD strictness to apply); currently supports:
     + elasticnet
     + elasticnetLDLax
