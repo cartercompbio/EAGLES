@@ -97,33 +97,32 @@ conda run -n eagles nextflow EAGLES/workflows/single_gene_scores[_train_only].nf
 
 ## Use EAGLES to score a new cohort with previously trained models
 ```bash
-if [[ "$mode" == elasticnet* ]] || [[ "$mode" == pcregression* ]] || [[ "$mode" == flipAllele* ]]; then
-    replace_nan_arg="--replace-nan 0"
-else
-    replace_nan_arg=""
-fi
-
-mkdir -p $score_outdir
-conda run -n eagle python $scoreScript \
-    --pgen "$pfile.pgen" \
-    --pvar "$pfile.pvar" \
-    --psam "$pfile.psam" \
-    --pindex $pindex \
-    --model-folder  $model_folder \
-    --expr $expr_table \
+conda run -n eagles nextflow EAGLES/workflows/score_new_cohort.nf \
+    --pfile $pfile \
+    --modelfolder $model_folder \
     --outdir $score_outdir \
-    $replace_nan_arg
+    [ --expr $expr_table ] \
+    [ --cov $covariates ] 
+
 ```
-+ mode: which EAGLES mode was used to generate these models (see training for supported modes)
-    + alternatively you can include "--replace-nan 0" or not (if scoring linear models, --replace-nan must be specified)
+Required
 + pfile: plink2 prefix for genotypes to be scored
     + for best results, this should contain individuals from a single local ancestry label (e.g. [GRAFpop](https://www.ncbi.nlm.nih.gov/projects/gap/cgi-bin/GrafPop_README.html) )
-+ pindex: file generated from EAGLES/workflows/bin/score_other_cohort.py (index_cohort)
 + model_folder: path to directory with trained EAGLES models
     + [24 sets of pre-trained models](https://doi.org/10.5281/zenodo.21477399)
-+ expr_table: tables with expression data used to evaluate model prediction accuracy
 + score_outdir: directory where outputs will be written
     1. feature_summary.tsv: shap values representing feature importances in the scored models
     2. missing_counts.tsv: summary of model feature snps missing from input pfile
     3. model_performance.tsv: summary of model performance in input cohort
+        + Y<sub>g</sub> =  W*cov + EAGLES<sub>g</sub> + ε
+        + Y<sub>g</sub>: expression of gene *g*
+        + EAGLES<sub>g</sub>: EAGLES prediction for gene *g*
+        + cov: covariates
+        + W: covariate weights
+        + ε: error
     4. scores.tsv: prediction values from each model for each sample in cohort
+Optional
++ covariates: tables with numerical values
+    + if not provided, numeric values from pfile.psam are used
++ expr_table: tables with expression data used to evaluate model prediction accuracy
+    + if not provided, model_performance.tsv will not be generated 
