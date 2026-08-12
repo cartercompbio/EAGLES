@@ -1,8 +1,8 @@
 process RENAMEVARIANTS{
     cpus 1
-    memory { 8.GB * task.attempt }
+    memory { 32.GB * task.attempt }
     errorStrategy 'retry'
-    maxRetries 3
+    maxRetries 4
     
     input:
     val pfile_prefix
@@ -21,7 +21,7 @@ process RENAMEVARIANTS{
         --pfile ${pfile_prefix} \\
         --set-all-var-ids @:#:\\\$r:\\\$a \\
         --make-pgen \\
-        --new-id-max-allele-len 1000 \\
+        --new-id-max-allele-len 100 \\
         --memory ${mem_mb} \\
         --out ${basename}_renamed
     """
@@ -47,7 +47,6 @@ process MAFFILTER{
         (task.memory.toMega() - 1024).toLong()
     )
     """
-    # Step 1: Identify SNPs with MAF > 0.01 in the cohort
     plink2 \
         --pfile ${basename} \
         --keep ${cohort} \
@@ -57,7 +56,6 @@ process MAFFILTER{
         --threads 1 \
         --out ${basename}_cohort_snps
     
-    # Step 2: Filter original pfile (all samples) to keep only those SNPs
     plink2 \
         --pfile ${basename} \
         --extract ${basename}_cohort_snps.snplist \
@@ -193,42 +191,59 @@ process GETVARS_BATCH {
     """
 }
 
-process GATHERGENO{
-    publishDir params.outdir + '/vars'
-    label 'EAGLES_VAR'
-    
+process GATHERSNPNAMES{
+
+    publishDir params.outdir + '/features'
+    label 'EAGLES_SMALL'
+
     input:
-     tuple val(tis), val(ensg), path(pgen), path(pvar), path(psam), path(model), path(covariates)
-    
+    path(pickle)
+
     output:
-    tuple val(tis), val(ensg), path("${tis}_${ensg}.pgen"), path("${tis}_${ensg}.psam"), path("${tis}_${ensg}.pvar"), path(model), path(covariates), optional: true
-    
+    path("*.txt")
+
     script:
+    def basename = pickle.name
+    """
+    python ${projectDir}/bin/snps_from_model.py \\
+        --model ${pickle} \\
+        --outfile "${basename}.txt"
+    """
+
+}
+
+process SNPSLICE{
+    cpus 1
+    memory { 8.GB * task.attempt }
+    errorStrategy 'retry'
+    maxRetries 3
+
+    input:
+    tuple path(pgen), path(pvar), path(psam)
+    path(snps)
+
+    output:
+    tuple path("*_sliced.pgen"), path("*_sliced.pvar"), path("*_sliced.psam"), path("*_sliced.pkl")
+
+    script:
+    def basename = pgen.baseName.replaceAll(/\.pgen$/, '')
     def mem_mb = Math.min(
         (0.95 * task.memory.toMega()).toLong(),
         (task.memory.toMega() - 1024).toLong()
-    )    
-    
+    )
     """
-    python ${projectDir}/bin/snps_from_model.py \\
-        --model ${model} \\
-        --output "snplist.txt"
-        
+    sort -u ${snps} > "snps_unique.txt"
+
+    plink2 \
+        --pfile ${basename} \
+        --extract snps_unique.txt \
+        --make-pgen \
+        --memory ${mem_mb} \
+        --threads 1 \
+        --out ${basename}_sliced   
+
+    python ${projectDir}/bin/index_cohort_pvar.py \\
+        --pbase  ${basename}_sliced
     
-        
-    if [ -f "snplist.txt" ]; then
-        
-        matching_snps=\$(awk 'NR==FNR{snps[\$1]; next} \$3 in snps' snplist.txt ${pvar} | wc -l)
-        
-        if [ "\$matching_snps" -gt 0 ]; then
-            plink2 \\
-                --pfile ${pgen.baseName} \\
-                --extract "snplist.txt" \\
-                --make-pgen \\
-                --memory ${mem_mb} \\
-                --out "${tis}_${ensg}"
-        fi
-    fi
-             
     """
 }

@@ -13,23 +13,6 @@ import pickle
 from fit_model import AlleleCount
 from sklearn.linear_model import LinearRegression
 
-def index_cohort(pvar_in, pkl_out):
-    snp_index = {}
-    with open(pvar_in, 'r') as file:
-        h = '##'
-        while h.startswith('##'):
-            h = next(file)
-
-        h = h.split('\t')
-        pos_index = h.index('ID')
-
-        for i,line in enumerate(file):
-            var_id = line.strip().split('\t')[pos_index]
-            snp_index[var_id] = i
-
-    with open(pkl_out, 'wb') as file:
-        pickle.dump(snp_index, file)
-
 def main():
    
     parser = argparse.ArgumentParser()
@@ -230,22 +213,27 @@ def main():
                 pass
             
     assert len(scores)>0
+    if args.outdir == "":
+        outbase = ""
+    else:
+        outbase = f'{args.outdir}/'
+        
     if len(scores)>0:
         scores = pd.DataFrame(scores)
-        scores.to_csv(f'{args.outdir}/scores.tsv', sep = '\t')
+        scores.to_csv(f'{outbase}scores.tsv', sep = '\t')
         
     if len(missing_count)>0:
         missing_count = pd.DataFrame(missing_count).T
-        missing_count.to_csv(f'{args.outdir}/missing_counts.tsv', sep = '\t')
+        missing_count.to_csv(f'{outbase}missing_counts.tsv', sep = '\t')
         
     if len(feature_summary)>0:    
         feature_summary = pd.concat(feature_summary).reset_index()
         feature_summary.columns = ['TISSUE','GENE','SNP','SHAP']
-        feature_summary.to_csv(f'{args.outdir}/feature_summary.tsv', sep = '\t', index = False)
+        feature_summary.to_csv(f'{outbase}feature_summary.tsv', sep = '\t', index = False)
     
     if len(model_performance)>0:
         model_performance = pd.DataFrame(model_performance).T
-        model_performance.to_csv(f'{args.outdir}/model_performance.tsv', sep = '\t')
+        model_performance.to_csv(f'{outbase}model_performance.tsv', sep = '\t')
 
 
 if __name__ == "__main__":
