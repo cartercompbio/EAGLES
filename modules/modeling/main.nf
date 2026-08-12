@@ -67,36 +67,33 @@ process MODELSCORE {
     """
 }
 
-process FIT_AND_SCORE {
-    cpus 2
-    memory 32.GB
-    publishDir params.outdir + '/scores', pattern: '*_scores.tsv'
-    publishDir params.outdir + '/models', pattern: '*.pkl'
+process MULTISCORE {
+    publishDir "${params.outdir}/scores"
+    errorStrategy 'finish'
 
     input:
-    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates), path(qtl)
-    val(model_type)
-    val(thres)
-    path(train)
+    tuple path(pgen), path(pvar), path(psam), path(pkl)
 
     output:
-    tuple val(tis), val(ensg), path("*.pkl"), path("*_scores.tsv")
-    //tuple val(tis), val(ensg), path("*.pkl"), optional: true  // in order to still save model
+    path("scores.tsv")
+    path("missing_counts.tsv") 
+    path("feature_summary.tsv") 
+    path("model_performance.tsv", optional: true)
 
-    script:
+    script: 
+    def covariates_arg = params.covariates ? "--covariates ${params.covariates}" : ""
+    def expr_arg = params.expr ? "--expr ${params.expr}" : ""
+    def fillna_arg = params.fillna ? "--replace-nan ${params.fillna}" : ""
     """
-    python ${projectDir}/bin/fit_and_score.py \
-        --pgen ${pgen} \
-        --psam ${psam} \
-        --pvar ${pvar} \
-        --expression ${expression} \
-        --covariates ${covariates} \
-        --model ${model_type} \
-        --gene ${ensg} \
-        --qtl ${qtl} \
-        --samples ${train} \
-        --thres ${thres} \
-        --model_output "${tis}_${ensg}.pkl" \
-        --score_output "${tis}_${ensg}"
+    python ${projectDir}/bin/score_other_cohort.py  \
+        --pgen "${pgen}" \
+        --pvar "${pvar}" \
+        --psam "${psam}" \
+        --pindex "${pkl}" \
+        --model-folder ${params.modelfolder} \
+        ${covariates_arg} \
+        ${expr_arg} \
+        ${fillna_arg} \
+        --outdir ""
     """
 }

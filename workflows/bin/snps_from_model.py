@@ -6,7 +6,7 @@ import argparse
 
 def get_feats(model_path):
     model_dict = joblib.load(model_path)
-    return list(m.feature_names_in_)
+    return list(model_dict['model'].feature_names_in_)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
