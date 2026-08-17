@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21983535.svg)](https://doi.org/10.5281/zenodo.21983535)
+
 # EAGLES
 Evaluating Aggregated Gene Level eQTL Scores
 
