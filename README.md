@@ -7,7 +7,7 @@ EAGLES provides pipelines to facilitate eQTL-based model training as well as sco
 
 ## Installation
 ```bash
-git clone https://github.com/Douglas-Meyer/EAGLES.git
+git clone https://github.com/cartercompbio/EAGLES.git
 ```
 
 ## Set up conda environment
