@@ -21,7 +21,7 @@ process RENAMEVARIANTS{
         --pfile ${pfile_prefix} \\
         --set-all-var-ids @:#:\\\$r:\\\$a \\
         --make-pgen \\
-        --new-id-max-allele-len 100 \\
+        --new-id-max-allele-len 1000 \\
         --memory ${mem_mb} \\
         --out ${basename}_renamed
     """
