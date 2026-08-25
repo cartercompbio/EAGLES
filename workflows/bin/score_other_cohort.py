@@ -12,6 +12,13 @@ import pickle
 
 from fit_model import AlleleCount
 from sklearn.linear_model import LinearRegression
+from sklearn.utils import get_tags
+
+def supports_nan(model):
+    try:
+        return get_tags(model).input_tags.allow_nan
+    except Exception:
+        return False 
 
 def main():
    
@@ -94,16 +101,10 @@ def main():
             X[col] = cov_table[col]
             missing_ct-=1
         X=X[model.feature_names_in_]
-        
-        if args.replace_nan is not None:
-            X = X.fillna(args.replace_nan)
-        elif isinstance(model, LinearRegression):
-            X = X.fillna(0)
             
         ###
         # if features scaled during training, apply same scaler to X
         ###
-
         try:
             features = list(model_dict['scaler'].feature_names_in_)
             X_subset = X[features].copy()
@@ -113,6 +114,11 @@ def main():
             del X_subset, features
         except KeyError:
             pass
+
+        if args.replace_nan is not None:
+            X = X.fillna(args.replace_nan)
+        elif not supports_nan(model):
+            X = X.fillna(0)
 
         scores[(tis,ensg)] = pd.Series(model.predict(X), index = X.index)
         missing_count[(tis,ensg)] = {'missing_features':missing_ct,'total_features':len(model.feature_names_in_), 'missing_feature%':missing_ct/len(model.feature_names_in_)}
