@@ -79,7 +79,11 @@ def main():
                 genotype_matrix[i, :] = -1
                 missing_ct +=1
 
-        genotype_matrix = pd.DataFrame(genotype_matrix, index = model.feature_names_in_, columns = pd.read_csv(args.psam, sep = '\t')['#IID']).T.replace(-1,np.nan)
+        try:
+            columns = pd.read_csv(args.psam, sep = '\t')['#IID']
+        except KeyError:
+            columns = pd.read_csv(args.psam, sep = '\t')['IID']
+        genotype_matrix = pd.DataFrame(genotype_matrix, index = model.feature_names_in_, columns=columns).T.replace(-1,np.nan)
 
         ###
         # attempt to find missing features in the covariate table
