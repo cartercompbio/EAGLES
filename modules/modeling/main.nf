@@ -3,7 +3,9 @@ process FITMODEL{
     label 'EAGLES_MODEL'
     
     input:
-    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar), path(expression), path(covariates, stageAs: 'covariates*'), path(qtl), path(qtl_index)
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar) 
+    path(expression)
+    path(qtl_index)
     val(model_type)
     val(thres)
     path(train)
@@ -12,7 +14,6 @@ process FITMODEL{
     tuple val(tis), val(ensg), path("*.pkl"), optional: true
     
     script:
-    def cov_arg = covariates instanceof List && covariates.isEmpty() ? "" : "--covariates ${covariates}"
     """
     variant_count=\$(grep -c '^[^#]' ${pvar})
     
@@ -22,10 +23,9 @@ process FITMODEL{
             --psam ${psam} \\
             --pvar ${pvar} \\
             --expression ${expression} \\
-            ${cov_arg} \\
             --model ${model_type} \\
             --gene ${ensg} \\
-            --qtl ${qtl} \\
+            --qtl ${params.qtltable} \\
             --qtl-index ${qtl_index} \\
             --samples ${train} \\
             --thres ${thres} \\
