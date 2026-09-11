@@ -1,24 +1,68 @@
 #!/usr/bin/env python
 
+import argparse
+import joblib
 import pandas as pd
 import numpy as np
+from pgenlib import PgenReader
+import pickle
 
-from functools import reduce
-
-import joblib
-import os
-import argparse
-from sklearn.linear_model import ElasticNetCV, RidgeCV, LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import GridSearchCV, cross_validate
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import KFold
+from sklearn.linear_model import LinearRegression, ElasticNetCV
 from sklearn.decomposition import PCA
+
 import optuna
 import xgboost as xgb
-from pgenlib import PgenReader
 
 
-from qtl_filter import load_slopes
+
+def load_slopes(filename, index_file, gene, **kwargs):
+    '''
+    kwargs:
+        var_col: string, which column from filename table to use as variant index
+        val_col: string, which column from filename table to use as eqtl slope values
+        
+    returns pandas.Series
+    
+    '''
+    
+    try:
+        var_col = kwargs['var_col']
+    except KeyError:
+        var_col = 'SNP'
+        
+    try:
+        val_col = kwargs['val_col']
+    except:
+        val_col = 'slope'
+
+    if filename.endswith('.csv'):
+        sep = ','
+    elif filename.endswith('.tsv'):
+        sep = '\t'
+    else:
+        raise ValueError(f'filename must be .csv or .tsv, not {filename}')
+
+    with open(index_file, 'rb') as idx:
+        id_ranges = pickle.load(idx)
+
+    if gene not in id_ranges:
+        return pd.Series()
+
+    start_byte,end_byte = id_ranges[gene]
+
+    with open(filename, 'rb') as infile:
+        l = next(infile).decode().strip().split(sep)
+        infile.seek(start_byte)
+
+        values = []
+        while infile.tell() < end_byte:
+            line = infile.readline().decode().strip()
+            if line:
+                values.append(line.split(sep))
+                
+        return pd.DataFrame(values, columns = l).set_index(var_col)[val_col]
 
 
 def load_pgen_data(pgen_path, psam_path, pvar_path):
@@ -68,285 +112,175 @@ def load_pgen_data(pgen_path, psam_path, pvar_path):
         
     return genotype_matrix
 
-
-
-def load_covariates(path):
-    if path is None:
-        return None
-    
-    cov = pd.read_csv(path, sep="\t", index_col = 0)
-    #if "#IID" in cov.columns:
-    #    cov = cov.rename(columns={"#IID": "IID"})
-    #cov = cov.set_index("IID")
-    cov.index = cov.index.astype(str).str.strip()
-    return cov
-
-def load_qtl_table(path, gene_id):
-    df = pd.read_csv(path, sep="\t")
-
-    df["ENSG_clean"] = df["ENSG"].str.replace(r"\.\d+$", "", regex=True)
-    df = df[df["ENSG_clean"] == gene_id]
-
-    df = df[["SNP", "slope"]].set_index("SNP")
-    return df
-
-def apply_flipping(X, qtl_df):
-    flip_mask = {}
-
-    common_snps = X.columns.intersection(qtl_df.index)
-    #Xf = X.copy()
-
-    for snp in common_snps:
-        slope = qtl_df.loc[snp, "slope"]
-        if slope < 0:
-            #Xf[snp] = 2 - Xf[snp]
-            flip_mask[snp] = True
-        else:
-            flip_mask[snp] = False
-
-    #for snp in X.columns:
-    #    if snp not in flip_mask:
-    #        flip_mask[snp] = False
-
-    #return Xf, flip_mask
-    return flip_mask
-
 def clean_gene_id(gene_id):
     gene_base = gene_id.split('.')[0]
     gene_base = gene_base.split('_')[0]
     return gene_base
 
-def load_data(pgen_path, psam_path, pvar_path, expression_path, covar_path, samples = None):
-    X = load_pgen_data(pgen_path, psam_path, pvar_path)
-    cov = load_covariates(covar_path)
-    if cov is not None:
-        cov_samples = cov.index
-    else:
-        cov_samples = None
+def load_data(pgen_path, psam_path, pvar_path, expression_path, samples = None, **kwargs):
+    try:
+        gene=kwargs['gene']
+    except:
+        raise ValueError('missing kwarg "gene"')
     
-    y = pd.read_csv(expression_path, sep="\t", index_col=0)
+    X = load_pgen_data(pgen_path, psam_path, pvar_path)
+
+    with open(expression_path, 'r') as file:
+        gene_col_index = next(file).strip().split('\t').index(gene)
+    
+    y = pd.read_csv(expression_path, sep="\t", index_col=0, usecols=[0,gene_col_index])
     if y.shape[1] == 1:
         y = y.iloc[:, 0]
     
-    
-    valid_items = [item for item in [y.index, X.index, cov_samples, samples] if item is not None]
-    common_samples = list(reduce(lambda x, y: set(x) & set(y), valid_items))
+    common_samples = list(set(y.index)&set(X.index)&set(samples))
         
     y = y.loc[common_samples]
-    
-    # impose outlier filter based on https://doi.org/10.1186/s13059-025-03709-0
-    # outliers are >5TPM and >Q3 + 5*IQR
-    outlier_thres = max([y.quantile(0.75) + 5*(y.quantile(0.75) - y.quantile(0.25)), 5])
-    y = y[y<=outlier_thres]
-        
     X = X.loc[y.index]
-    
-    if cov is not None:
-        cov = cov.loc[y.index]
-    return X, y, cov
 
-def pca_transform(g, thres = 0.999):
+    return X, y
+
+def objective(trial, X, y, model_type, penalty=0.1, n_splits=5, early_stopping_rounds=50):
+    if model_type != 'xgb':
+        raise ValueError('valid options are "xgb"')
+
+    params = {
+        'objective': 'reg:squarederror',
+        'eval_metric': 'rmse',
+        'booster': 'gbtree',
+        'tree_method': 'hist',  # required for grow_policy='lossguide'
+
+        'lambda': trial.suggest_float('lambda', 0.1, 1000, log=True),
+        'alpha': trial.suggest_float('alpha', 0.1, 1000, log=True),
+
+        'max_depth': trial.suggest_int('max_depth', 2, 10),
+        'eta': trial.suggest_float('eta', 0.01, 0.5, log=True),
+        'gamma': trial.suggest_float('gamma', 1e-2, 1000, log=True),
+        'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
+
+        'subsample': trial.suggest_float('subsample', 0.2, 0.8),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 0.8),
+        'colsample_bylevel': trial.suggest_float('colsample_bylevel', 0.5, 0.8),
+
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+        'n_estimators': 2000, 
+        'random_state': 100,
+    }
+
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=100)
+    train_scores = []
+    val_scores = []
+    best_iters = []
+
+    X_arr = np.asarray(X)
+    y_arr = np.asarray(y)
+
+    for train_idx, val_idx in kf.split(X_arr):
+        X_tr, X_val = X_arr[train_idx], X_arr[val_idx]
+        y_tr, y_val = y_arr[train_idx], y_arr[val_idx]
+
+        model = xgb.XGBRegressor(
+            **params,
+            early_stopping_rounds=early_stopping_rounds,
+        )
+        model.fit(
+            X_tr, y_tr,
+            eval_set=[(X_val, y_val)],
+            verbose=False,
+        )
+
+        best_iters.append(model.best_iteration)
+
+        train_pred = model.predict(X_tr)
+        val_pred = model.predict(X_val)
+
+        train_scores.append(np.sqrt(np.mean((y_tr - train_pred) ** 2)))
+        val_scores.append(np.sqrt(np.mean((y_val - val_pred) ** 2)))
+
+    train_score = np.mean(train_scores)
+    val_score = np.mean(val_scores)
+    overfit_gap = max(val_score - train_score, 0)
+
+    # stash the actual tree counts so you can inspect/reuse them later
+    trial.set_user_attr('best_iterations', best_iters)
+    trial.set_user_attr('mean_best_iteration', float(np.mean(best_iters)))
+
+    return val_score + penalty * overfit_gap
+
+
+def tune_model(X, y, model_type):
+    study = optuna.create_study(
+        direction='minimize',
+        sampler=optuna.samplers.TPESampler(seed=100),
+    )
+    study.optimize(lambda trial: objective(trial, X, y, model_type),
+                   n_trials=200, show_progress_bar=False)
+
+    best_trial = study.best_trial
+    best_params = dict(best_trial.params)
+    best_params['n_estimators'] = round(best_trial.user_attrs['mean_best_iteration'])
+
+    return best_params
+    
+def fit_flipallele(X, eqtl):
+    model = LinearRegression()
+    qtl_ser = eqtl[eqtl.index.isin(X.columns)].astype(float)
+    
+    model.intercept_ = int(2*(qtl_ser<0).sum())
+    model.coef_ = np.array(2*(qtl_ser>0) - 1).astype(int)
+    model.feature_names_in_ = np.array(qtl_ser.index)
+
+    return model
+
+def pca_transform(X_scaled, thres = 0.999):
     pca = PCA()
-    pc_df = pd.DataFrame(pca.fit_transform(g), index = g.index)
+    pc_df = pd.DataFrame(pca.fit_transform(X_scaled), index = X_scaled.index)
+    pc_comp = pd.DataFrame(pca.components_, columns = X_scaled.columns, index = [f'PC{i}' for i in range(1,pca.components_.shape[0]+1)]).T
     
-    pc_comp = pd.DataFrame(pca.components_, columns = g.columns, index = [f'PC{i}' for i in range(1,pca.components_.shape[0]+1)]).T
-
-    pc_df = pc_df.loc[:, range((np.cumsum(pca.explained_variance_ratio_)<thres).sum())]
+    n_comps = min([1 + list((1-np.cumsum(pca.explained_variance_ratio_)).round(6) > (1-thres)).index(False),
+                   pc_df.shape[0]])
+    
+    pc_df = pc_df[range(n_comps)]
     pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
-    return pc_df, pc_comp.loc[:, pc_df.columns]
+    pc_comp = pc_comp.loc[:, pc_df.columns]
+    return pc_df, pc_comp
 
-def fit_PCR(X_scaled, cov_scaled, y, scaler, thres):
+def fit_PCR(X_scaled, y, scaler, thres):
     
-    X_for_pca = pd.DataFrame(X_scaled, index = y.index, columns = scaler.feature_names_in_[:X_scaled.shape[1]])
-    pcs,loadings = pca_transform(X_for_pca, thres)
+    pcs,loadings = pca_transform(X_scaled, thres)
     
     # Check if PCA returned any components
     if pcs.shape[1] == 0:
         return None
 
     pc_model = LinearRegression()
-    
-    if cov_scaled is not None:
-        pc_model.fit(pcs.join(cov_scaled), y)
-        pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
-        temp = pd.Series(dict(zip(cov_scaled.columns, pc_model.coef_[pcs.shape[1]:])))
-        temp.index = temp.index.str.replace('cov|','')
-        coef_scaled = pd.concat([loadings.dot(pc_weights), temp])
-    else:
-        pc_model.fit(pcs, y)
-        pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
-        coef_scaled = loadings.dot(pc_weights)
+    pc_model.fit(pcs, y)
+    pc_weights = pd.Series(dict(zip(pc_model.feature_names_in_[:pcs.shape[1]], pc_model.coef_[:pcs.shape[1]])))
+    coef_scaled = loadings.dot(pc_weights)
 
     snp_model = LinearRegression()
     snp_model.coef_ = coef_scaled.values
     snp_model.intercept_ = pc_model.intercept_
     snp_model.feature_names_in_ = scaler.feature_names_in_
     
-    return snp_model
+    return snp_model   
 
-def tune_rf(blank_model, x_train,y_train, **kwargs):
-    try:
-        parameter_grid = kwargs['parameter_grid']
-    except:
-        parameter_grid = {
-           'max_samples':[0.2, 0.25, 0.3, 0.35, 0.4],
-           'n_estimators': [50,75,100, 125, 150],
-           'max_depth':[2, 5, 10, 15,20],
-            'min_samples_split':[2, 4, 6, 8, 10],
-            'min_samples_leaf':[1,3,5,7,9]
-        }
-    
-    model_grid = GridSearchCV(blank_model, parameter_grid, verbose = 0)
-    model_grid.fit(x_train,y_train)
-    
-    return model_grid.best_params_
-
-
-
-def objective(trial, X, y, model_type, penalty = 1):
-    if model_type == 'xgb':
-        params = {
-            'objective': 'reg:squarederror',
-            'eval_metric': 'rmse',
-            'booster':'gbtree',
-
-            'lambda': trial.suggest_float('lambda', 0.1, 1000, log=True),
-            'alpha': trial.suggest_float('alpha', 0.1, 1000, log=True),
-
-
-            'max_depth': trial.suggest_int('max_depth', 2, 10),
-            'eta': trial.suggest_float('eta', 0.01, 0.5, log=True),
-            'gamma': trial.suggest_float('gamma', 1e-2, 1000, log=True),
-            'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
-
-            'subsample': trial.suggest_float('subsample', 0.2, 0.8),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 0.8),
-            'colsample_bylevel': trial.suggest_float('colsample_bylevel', 0.5, 0.8),
-
-            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
-            'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-            'random_state': 100        
-        }
-        model = xgb.XGBRegressor(**params)
-    elif model_type == 'rf':
-        params = {
-            'max_samples': trial.suggest_float('max_samples', 0.2, 0.8),
-            'n_estimators': trial.suggest_int('n_estimators', 50, 500),
-            'max_depth': trial.suggest_int('max_depth', 2, 20),
-            'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 9),
-            'random_state':100
-        }
-        model = RandomForestRegressor(**params)
-    else:
-        raise ValueError('valid options are "xgb" or "rf"')
-    # Perform cross-validation
-    cv_results = cross_validate(
-        model, X, y, 
-        cv=5, 
-        scoring='neg_root_mean_squared_error',
-        return_train_score=True
-    )
-    
-    train_score = -cv_results['train_score'].mean()
-    val_score = -cv_results['test_score'].mean()
-    
-    overfit_gap = max([train_score - val_score, 0])
-    
-    #penalize score if it overfits
-    return val_score + penalty*overfit_gap
-
-def tune_model(X, y, model_type):
-
-    study = optuna.create_study(
-        direction='minimize',
-        sampler=optuna.samplers.TPESampler(seed=100)
-    )
-
-    study.optimize(lambda trial: objective(trial, X, y, model_type),
-                   n_trials=200, show_progress_bar=False)
-    
-    return study.best_params
-
-class AlleleCount:
-    def __init__(self):
-        self.coef_ = None
-        self.intercept_ = None
-        self.feature_names_in_ = None
-    
-    def fit(self, X, eqtl):
-        """
-        Fit AlleleCount model using sign of eqtl slopes.
-        
-        
-        Parameters:
-            X : pandas dataframe with training sample genotype data
-            
-            eqtl : pandas series with values representing eqtl slopes (or otherwise
-                    quantifying prior defined relationship between variants and the modeled gene)
-            
-        Returns:
-            self : object
-        """
-        
-        qtl_ser = eqtl[eqtl.index.isin(X.columns)].astype(float)
-        
-        self.intercept_ = 2*(qtl_ser<0).sum()
-        self.coef_ = np.array(2*(qtl_ser>0) - 1)
-        self.feature_names_in_ = np.array(qtl_ser.index)
-            
-    def predict(self, X):
-        """
-        Predict by counting expression-associated alleles
-
-        Parameters:
-        X : array-like, shape (n_samples, n_features)
-            Samples
-        
-        Returns:
-        y_pred : array, shape (n_samples,)
-            Returns predicted values
-        """
-        if self.coef_ is None or self.intercept_ is None:
-            raise ValueError("Model must be fitted before making predictions")
-        
-        X = np.array(X)
-        X = np.nan_to_num(X, nan=0.0) #handle missing values by ignoring them
-        return np.round(X @ self.coef_ + self.intercept_).astype(int)
-
-def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
+def fit_model(X, y, model_type, thres = 1, qtl_ser=None, gene_id=None):
     scaler = StandardScaler()
-    temp = X.copy()
-    if cov is not None:
-        temp = X.join(cov)
-    X_cov_scaled = pd.DataFrame(scaler.fit_transform(temp), index = temp.index, columns = temp.columns)
-    feat_list = list(temp.columns)
-    del temp
+    X_scaled = pd.DataFrame(scaler.fit_transform(X), index = X.index, columns = X.columns)
+    feat_list = list(X.columns)
     
     if model_type == "flipallele":
-        model = AlleleCount()
-        model.fit(X, qtl_ser)
-        return {'model':model, 'feature_names':model.feature_names_in_}
-    elif X_cov_scaled.shape[1]==1:
+        model = fit_flipallele(X, qtl_ser)
+        return {"model":model, "feature_names":feat_list}
+    elif X_scaled.shape[1]==1:
         model = LinearRegression()
     elif model_type == "elasticnet":
         model = ElasticNetCV(l1_ratio=0.5, cv=5, max_iter=10000)
-    elif model_type == "ridge":
-        model = RidgeCV()
-    elif model_type == "rf":
-        best_params = tune_model(X_cov_scaled, y, model_type)
-        model = RandomForestRegressor(**best_params, random_state = 100)
     elif model_type == "xgb":
-        best_params = tune_model(X_cov_scaled, y, model_type)
+        best_params = tune_model(X_scaled, y, model_type)
         model = xgb.XGBRegressor(**best_params, random_state = 100)
     elif model_type == "pcr":
-        if cov is None:
-            model = fit_PCR(X_cov_scaled, None, y, scaler, thres)
-        elif X.shape[1]==1:
-            model = LinearRegression()
-            model.fit(X_cov_scaled, y)
-        else:
-            model = fit_PCR(X_cov_scaled.loc[:, X.columns], X_cov_scaled.loc[:, cov.columns].rename({x:'cov|'+x for x in cov.columns},axis = 1), y, scaler, thres)
+        model = fit_PCR(X_scaled, y, scaler, thres)
             
         if model is not None:
             return {"scaler":scaler, "model":model, "feature_names":feat_list}
@@ -356,12 +290,14 @@ def fit_model(X, y, cov, model_type, thres = 1, qtl_ser=None, gene_id=None):
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    model.fit(X_cov_scaled, y)
+    model.fit(X_scaled, y)
     return {
         "scaler": scaler,
         "model": model,
         "feature_names": feat_list
     }
+
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -370,8 +306,7 @@ def main():
     parser.add_argument("--psam", required=True, help="path to .psam file")
     parser.add_argument("--pvar", required=True, help="path to .pvar file")
     parser.add_argument("--expression", required=True, help="Path to expression data file")
-    parser.add_argument("--covariates", required=False, default = None, help="Path to covariate file")
-    parser.add_argument("--model", choices=["elasticnet", "rf", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
+    parser.add_argument("--model", choices=["elasticnet", "xgb", "pcr", "flipallele"], default="elasticnet", help="Model type")
     parser.add_argument("--output", required=True, help="Output file path to save trained model")
     parser.add_argument("--gene", required=True, help="Gene ID to model")
     parser.add_argument("--samples", required=True, help="training sample list, one per line")
@@ -383,7 +318,7 @@ def main():
     args.gene = clean_gene_id(args.gene)
     
     samples = set(pd.read_csv(args.samples, header = None)[0])
-    X, y_all, cov = load_data(args.pgen, args.psam, args.pvar, args.expression, args.covariates, samples)
+    X, y_all = load_data(args.pgen, args.psam, args.pvar, args.expression, samples, gene=args.gene)
 
     if isinstance(y_all, pd.Series):
         y = y_all
@@ -397,7 +332,7 @@ def main():
     if qtl_ser is not None:
         qtl_ser = qtl_ser[qtl_ser.index.isin(X)]
 
-    model = fit_model(X, y,cov, args.model, args.thres, qtl_ser=qtl_ser, gene_id=args.gene)
+    model = fit_model(X, y, args.model, args.thres, qtl_ser=qtl_ser, gene_id=args.gene)
     if model is not None:
         joblib.dump(model, args.output)
         print(f"Model saved to: {args.output}")

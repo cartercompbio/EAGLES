@@ -1,6 +1,6 @@
 process RENAMEVARIANTS{
     cpus 1
-    memory { 32.GB * task.attempt }
+    memory { 64.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 4
     
@@ -29,7 +29,7 @@ process RENAMEVARIANTS{
 
 process MAFFILTER{
     cpus 1
-    memory { 8.GB * task.attempt }
+    memory { 64.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 3
     
@@ -60,12 +60,98 @@ process MAFFILTER{
         --pfile ${basename} \
         --extract ${basename}_cohort_snps.snplist \
         --make-pgen \
+        --keep ${cohort} \
         --memory ${mem_mb} \
         --threads 1 \
         --out ${basename}_maf_filtered
     """
 }
 
+process GETQTLPICKLE{
+    cpus 1
+    memory 8.GB
+
+    input:
+    path(sumstats)
+
+    output:
+    path("*.pkl")
+
+    script:
+    """
+    python ${projectDir}/bin/index_qtls.py \
+        --input ${sumstats} \
+        --output "${sumstats.simpleName}.pkl"
+    """
+
+}
+
+process GENELISTPICKLE{
+    cpus 1
+    memory 1.GB
+
+    input:
+    path(pickle)
+
+    output:
+    path("genes.txt")
+
+    script:
+    """
+    python3 -c "
+import pickle
+
+with open('${pickle}', 'rb') as f:
+    obj = pickle.load(f)
+
+keys = list(obj.keys()) if hasattr(obj, 'keys') else list(obj)
+
+
+with open('genes.txt', 'w') as file:
+    file.write('\\n'.join(keys))
+"
+    """
+}
+
+process PREPROCESSEXPR{
+    cpus 1
+    publishDir params.outdir + '/covtable'
+    memory 8.GB
+
+    input:
+    tuple path(pgen), path(pvar), path(psam)
+    path(expr)
+    path(genes)
+
+    output:
+    path("expression.tsv")
+    path("regress_out_covariates.pkl")
+    path("*pca.eigenvec.allele")
+    path("*pca.afreq")
+
+    script:
+    def basename = pgen.baseName.replaceAll(/\.pgen$/, '')
+    def mem_mb = Math.min(
+        (0.95 * task.memory.toMega()).toLong(),
+        (task.memory.toMega() - 1024).toLong()
+    )
+    """
+    plink2 \
+        --pfile ${basename} \
+        --pca 5 allele-wts \
+        --freq \
+        --memory ${mem_mb} \
+        --out ${basename}_pca
+
+    python ${projectDir}/bin/preprocess_expression.py \
+        --psam ${psam} \
+        --pca  ${basename}_pca.eigenvec \
+        --expr ${expr} \
+        --genes ${genes} \
+        --output "expression.tsv"
+
+    """
+}
 
 
 process GETSTARTSTOP{
@@ -91,13 +177,15 @@ process GETSTARTSTOP{
     """
 }
 
-process GETVARS_BATCH {
+process GETVARS {
     publishDir params.outdir + '/vars'
     label 'EAGLES_VAR'
     
     input:
-    tuple val(tis_list), val(ensg), val(chrom), val(start), val(stop)
+    tuple val(tis), val(ensg), val(chrom), val(start), val(stop)
     tuple path(pgen), path(pvar), path(psam)
+    path(qtltable)
+    path(qtlindex)
     val(prune)
     val(window)
     val(r2)
@@ -128,64 +216,64 @@ process GETVARS_BATCH {
             --out "${ensg}_temp"
     fi
 
-    for tis in ${tis_list.join(' ')}; do
-        #identify tis-associated eqtls from pfile
-        python ${projectDir}/bin/qtl_filter.py \
-            --qtl-folder ${params.gtexQTLfolder} \
-            --index-folder ${params.gtexQTLindexFolder} \
-            --gene "${ensg}" \
-            --tis "\${tis}" \
-            --pvar "${ensg}_temp.pvar" \
-            --output "temp_\${tis}_${ensg}.txt"            
+    #identify tis-associated eqtls from pfile
+    python ${projectDir}/bin/qtl_filter.py \
+        --qtl-file ${qtltable} \
+        --index-file ${qtlindex} \
+        --gene "${ensg}" \
+        --tis "${tis}" \
+        --pvar "${ensg}_temp.pvar" \
+        --output "temp_${tis}_${ensg}.txt"            
+    
+    # any eqtl found
+    if [ -s "temp_${tis}_${ensg}.txt" ]; then
+        num_lines=\$(grep -c '' "temp_${tis}_${ensg}.txt")
         
-        # any eqtl found
-        if [ -s "temp_\${tis}_${ensg}.txt" ]; then
-            num_lines=\$(grep -c '' "temp_\${tis}_${ensg}.txt")
-            
-            # exactly 1 eqtl
-            if [ "\$num_lines" -eq 1 ]; then
+        # exactly 1 eqtl
+        if [ "\$num_lines" -eq 1 ]; then
+            plink2 \
+                --pfile "${ensg}_temp" \
+                --extract "temp_${tis}_${ensg}.txt" \
+                --make-pgen \
+                --memory ${mem_mb} \
+                --out "${tis}_${ensg}"  
+                
+        # more than 1 eqtl and ld prune enabled
+        elif [ "${prune}" = "true" ]; then
+            plink2 \
+                --indep-pairwise ${window} ${r2} \
+                --pfile "${ensg}_temp.pvar"  \
+                --keep "${params.train}" \
+                --extract "temp_${tis}_${ensg}.txt" \
+                --memory ${mem_mb} \
+                --out "${tis}_${ensg}"
+                
+            if [ -s "${tis}_${ensg}.prune.in" ]; then
                 plink2 \
                     --pfile "${ensg}_temp" \
-                    --extract "temp_\${tis}_${ensg}.txt" \
+                    --extract "${tis}_${ensg}.prune.in" \
                     --make-pgen \
                     --memory ${mem_mb} \
-                    --out "\${tis}_${ensg}"  
-                    
-            # more than 1 eqtl and ld prune enabled
-            elif [ "${prune}" = "true" ]; then
-                plink2 \
-                    --indep-pairwise ${window} ${r2} \
-                    --pfile ${params.europfile}  \
-                    --extract "temp_\${tis}_${ensg}.txt" \
-                    --memory ${mem_mb} \
-                    --out "\${tis}_${ensg}"
-                    
-                if [ -s "\${tis}_${ensg}.prune.in" ]; then
-                    plink2 \
-                        --pfile "${ensg}_temp" \
-                        --extract "\${tis}_${ensg}.prune.in" \
-                        --make-pgen \
-                        --memory ${mem_mb} \
-                        --out "\${tis}_${ensg}"
-                else
-                    echo "no lo-LD eqtls found for \${tis} and ${ensg}"
-                fi
-                    
-            # more than 1 eqtl, no ld pruning
+                    --keep ${params.train} \
+                    --out "${tis}_${ensg}"
             else
-                plink2 \
-                    --pfile "${ensg}_temp" \
-                    --extract "temp_\${tis}_${ensg}.txt" \
-                    --make-pgen \
-                    --memory ${mem_mb} \
-                    --out "\${tis}_${ensg}"
-            fi        
-        #no eqtls found    
+                echo "no lo-LD eqtls found for ${tis} and ${ensg}"
+            fi
+                
+        # more than 1 eqtl, no ld pruning
         else
-             echo "no eqtls found for \${tis} and ${ensg}"
-        fi
+            plink2 \
+                --pfile "${ensg}_temp" \
+                --extract "temp_${tis}_${ensg}.txt" \
+                --make-pgen \
+                --memory ${mem_mb} \
+                --out "${tis}_${ensg}"
+        fi        
+    #no eqtls found    
+    else
+         echo "no eqtls found for ${tis} and ${ensg}"
+    fi
         
-    done
     rm -f *temp*
     
     """
@@ -247,3 +335,4 @@ process SNPSLICE{
     
     """
 }
+

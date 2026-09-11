@@ -30,6 +30,37 @@ params.modes = [
         model: "elasticnet",
         ldmode: "ldlax"
     ],
+    
+    randomforestLDStrict: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldstrict"
+    ],
+    randomforestLDMed: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldmed"
+    ],
+
+    randomforestLDLax: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldlax"
+    ],
+    
+    randomforest: [ 
+        upstream: 1000000,
+        downstream: 1000000,
+        threshold: 1,
+        model: "rf",
+        ldmode: "ldnone"
+    ],
  
     xgb: [ 
         upstream: 1000000,
@@ -140,10 +171,10 @@ params.ldlax = [
 ]
 params.ldnone = [:]
 
-
-include { RENAMEVARIANTS; MAFFILTER; PREPROCESSEXPR; GENELISTPICKLE;  GETSTARTSTOP; GETVARS; GETQTLPICKLE; } from '../modules/preprocessing'
+include { RENAMEVARIANTS; MAFFILTER; GETSTARTSTOP; GETVARS_BATCH } from '../modules/preprocessing'
 include { FITMODEL } from '../modules/modeling'
 include { SAVEPARAMS } from '../modules/logging'
+
 
 workflow {
     if (!params.modes.containsKey(params.mode)) {
@@ -169,32 +200,29 @@ workflow {
             def available_modes = ['ldlax', 'ldmed','ldstrict','ldnone']
             error "Unknown LD Mode: '${mode_params.ldmode}'. Available modes: ${available_modes.join(', ')}"
     }
-
+    
     pfile_renamed = RENAMEVARIANTS(params.pfile)
     pfile_filtered = MAFFILTER(pfile_renamed, params.train)
 
-    //get list of gene names in the input expression table
-    //get list of gene names in the QTL table
-    //channel with modelable genes based on intersection
-    def expr_header = file(params.expr).readLines()[0].tokenize('\t')
-    def ensg_cols = expr_header[1..-1]
-    expr_ensg = Channel.fromList(ensg_cols)
+    tissue_names = Channel
+        .fromPath("${params.gtexQTLfolder}/*.tsv")
+        .map { file -> file.baseName }  // Extract tissue name (remove .tsv)
+        .filter { tissue ->
+            // Check if corresponding .pkl file exists
+            def pkl_file = new File("${params.gtexQTLindexFolder}/${tissue}.pkl")
+            def expr_dir = new File("${params.expressionfolder}/${tissue}")
 
-    qtlindex = GETQTLPICKLE(file(params.qtltable))
-    genes = GENELISTPICKLE(qtlindex)
-    gene_ch = genes.splitText()
-        .map { it.trim() }
-        .join(expr_ensg)
+            // Only keep if both exist
+            pkl_file.exists() && expr_dir.exists()
+        }
 
-    //TODO: need to save info in case we want to use the same transformation for other cohorts (rather than refitting)
-    // 1. genomic pc loadings
-    // 2. transcriptomic pc loadings
-    // 3. regress-out coefficients for covariates
-    expr_table = PREPROCESSEXPR(pfile_filtered, params.expr, genes)[0]
-
-    // based on modelable gene list create channel of tuples
-    //[tissue, ensg, chrom, start, stop]
-    params.tis  = file(params.expr).baseName
+    heritable_gene = Channel
+        .fromPath(params.heritability)
+        .splitCsv(header: true, sep: '\t')
+        .map { row -> 
+            row.ENSG
+        }
+        
     gene_info_ch = Channel.fromPath(params.geneInfo)
     
     GETSTARTSTOP(
@@ -203,26 +231,42 @@ workflow {
         mode_params.downstream
     )
     
-    gene_info = GETSTARTSTOP.out
+    genes = GETSTARTSTOP.out
         .splitCsv(header: true, sep: '\t')
         .map { row -> 
             tuple(row.ENSG, row.CHROM, row.start, row.end)
         }
-        .join(gene_ch)
-        .map { ensg, chrom, start, stop ->
-            [ params.tis, ensg, chrom, start, stop ]
+        .join(heritable_gene)        
+    
+    tissue_gene_ch = tissue_names.combine(genes) //[tis, ensg, chrom, start, end]
+        .filter { tis,ensg,chrom,start,end ->
+            def expr_file = new File("${params.expressionfolder}/${tis}/${ensg}.tsv")
+            expr_file.exists()
         }
 
+    heritable_tis_gene = Channel
+        .fromPath(params.heritability)
+        .splitCsv(header: true, sep: '\t')
+        .map { row -> 
+            tuple(row.TISSUE, row.ENSG)
+        }
+    
+
+    filtered_tis_gene_ch = tissue_gene_ch.join(heritable_tis_gene, by: [0,1])//[tis, ensg, chrom, start, end]
+        .groupTuple(by: [1, 2, 3, 4]) 
+    
+        
     switch(mode_params.ldmode){
         case "ldnone":
-            variant_res = GETVARS(gene_info, pfile_filtered, params.qtltable, qtlindex, false, "", "")
+            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_filtered, false, "", "")
             break
         default:
-            variant_res = GETVARS(gene_info, pfile_filtered, params.qtltable, qtlindex, true,  ld_params.ldWindow, ld_params.ldR)
+            variant_res = GETVARS_BATCH(filtered_tis_gene_ch, pfile_filtered, true,  ld_params.ldWindow, ld_params.ldR)
             break
     }
-
+    
     variants = variant_res
+        .transpose()
         .map { pgen, psam, pvar ->
             def filename = pgen.baseName  
             def match = filename =~ /^(.+)_(ENSG\d+)$/
@@ -230,8 +274,17 @@ workflow {
             def ensg = match[0][2]  
             [tis, ensg, pgen, psam, pvar]
         }
+        
+    variants_for_model = variants
+        .map{tis,ensg,pgen,psam,pvar ->
+            def expression_path = file("${params.expressionfolder}/${tis}/${ensg}.tsv")
+            def covariate_path =  (params.covariates != null && params.covariates != "") ? file(params.covariates) : []
+            def qtl_path = file("${params.gtexQTLfolder}/${tis}.tsv")
+            def qtl_index = file("${params.gtexQTLfolder}/${tis}.pkl")
+            [tis,ensg,pgen,psam,pvar,expression_path,covariate_path, qtl_path, qtl_index]
+        }
             
-    models = FITMODEL(variants, expr_table, qtlindex, mode_params.model, mode_params.threshold, params.train)
+    models = FITMODEL(variants_for_model, mode_params.model, mode_params.threshold, params.train)
+    
     SAVEPARAMS(mode_params, ld_params)
-
 }
