@@ -242,7 +242,7 @@ process GETVARS {
         elif [ "${prune}" = "true" ]; then
             plink2 \
                 --indep-pairwise ${window} ${r2} \
-                --pfile "${ensg}_temp.pvar"  \
+                --pfile "${ensg}_temp"  \
                 --keep "${params.train}" \
                 --extract "temp_${tis}_${ensg}.txt" \
                 --memory ${mem_mb} \
