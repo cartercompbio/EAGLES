@@ -231,18 +231,26 @@ def fit_flipallele(X, eqtl):
 
     return model
 
-def pca_transform(X_scaled, thres = 0.999):
-    pca = PCA()
-    pc_df = pd.DataFrame(pca.fit_transform(X_scaled), index = X_scaled.index)
-    pc_comp = pd.DataFrame(pca.components_, columns = X_scaled.columns, index = [f'PC{i}' for i in range(1,pca.components_.shape[0]+1)]).T
-    
-    n_comps = min([1 + list((1-np.cumsum(pca.explained_variance_ratio_)).round(6) > (1-thres)).index(False),
-                   pc_df.shape[0]])
-    
-    pc_df = pc_df[range(n_comps)]
-    pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
-    pc_comp = pc_comp.loc[:, pc_df.columns]
-    return pc_df, pc_comp
+def pca_transform(X_scaled, thres = 0.999, **kwargs):
+    trial_number = 1
+    while trial_number < 5:
+        try:
+            pca = PCA()
+            pc_df = pd.DataFrame(pca.fit_transform(X_scaled), index = X_scaled.index)
+            pc_comp = pd.DataFrame(pca.components_, columns = X_scaled.columns, index = [f'PC{i}' for i in range(1,pca.components_.shape[0]+1)]).T
+            
+            n_comps = min([1 + list((1-np.cumsum(pca.explained_variance_ratio_)).round(6) > (1-thres)).index(False),
+                           pc_df.shape[0]])
+            
+            pc_df = pc_df[range(n_comps)]
+            pc_df.columns = [f'PC{i}' for i in range(1,pc_df.shape[1]+1)]
+            pc_comp = pc_comp.loc[:, pc_df.columns]
+            return pc_df, pc_comp
+
+        except:
+            trial_number += 1
+
+            
 
 def fit_PCR(X_scaled, y, scaler, thres):
     
