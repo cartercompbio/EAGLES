@@ -116,7 +116,7 @@ with open('genes.txt', 'w') as file:
 process PREPROCESSEXPR{
     cpus 1
     publishDir params.outdir + '/covtable'
-    memory 8.GB
+    memory 64.GB
 
     input:
     tuple path(pgen), path(pvar), path(psam)
@@ -135,6 +135,7 @@ process PREPROCESSEXPR{
         (0.95 * task.memory.toMega()).toLong(),
         (task.memory.toMega() - 1024).toLong()
     )
+//TODO: will fail if fewer than 50 samples are provided to plink2 pca...
     """
     plink2 \
         --pfile ${basename} \

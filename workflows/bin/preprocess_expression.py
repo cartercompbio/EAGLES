@@ -13,7 +13,7 @@ if __name__ == '__main__':
     parser.add_argument("--psam", required=True)
     parser.add_argument("--expr", required=True)
     parser.add_argument("--pca", required=True)
-    parser.add_argument("--genes", required=True)
+    parser.add_argument("--genes", required=False)
     parser.add_argument("--output", required=True)
     parser.add_argument("--n-components", required=False,default = 10)
     
@@ -35,8 +35,9 @@ if __name__ == '__main__':
     table['SEX'] = pd.read_csv(args.psam, sep = '\t', index_col = 0)['SEX'] - 1
     table['intercept'] = 1
 
-    genes = sorted(set(pd.read_csv(args.genes, header = None)[0])&set(expr_table.columns))
-    expr_table = expr_table.loc[:, genes]
+    if args.genes is not None:
+        genes = sorted(set(pd.read_csv(args.genes, header = None)[0])&set(expr_table.columns))
+        expr_table = expr_table.loc[:, genes]
 
     X = table.loc[expr_table.index].values
     Y = np.log2(expr_table.values + 1)

@@ -43,6 +43,51 @@ process FITMODEL{
     """ 
 }
 
+process FITMODELNOEARLYSTOP{
+    publishDir params.outdir + '/models'
+    label 'EAGLES_MODEL'
+    
+    input:
+    tuple val(tis), val(ensg), path(pgen), path(psam), path(pvar) 
+    path(expression)
+    path(qtl_index)
+    val(model_type)
+    val(thres)
+    path(train)
+
+    output:
+    tuple val(tis), val(ensg), path("*.pkl"), optional: true
+    
+    script:
+    """
+    variant_count=\$(grep -c '^[^#]' ${pvar})
+    
+    if [ "\$variant_count" -gt 0 ]; then
+        python ${projectDir}/bin/fit_model_no_early_stop.py \\
+            --pgen ${pgen} \\
+            --psam ${psam} \\
+            --pvar ${pvar} \\
+            --expression ${expression} \\
+            --model ${model_type} \\
+            --gene ${ensg} \\
+            --qtl ${params.qtltable} \\
+            --qtl-index ${qtl_index} \\
+            --samples ${train} \\
+            --thres ${thres} \\
+            --output "${tis}_${ensg}.pkl"
+            
+        # output is only optional for non-pcr model types
+        if [ "${model_type}" != "pcr" ] && [ ! -f "${tis}_${ensg}.pkl" ]; then
+            echo "Error: Expected output file ${tis}_${ensg}.pkl not created"
+            exit 1
+        fi
+        
+    else
+        echo "Skipping ${tis}_${ensg}: Only \$variant_count variant(s) found in ${pvar}"
+    fi
+    """ 
+}
+
 process MODELSCORE {
     publishDir params.outdir + '/scores'
     label 'EAGLES_MODEL'

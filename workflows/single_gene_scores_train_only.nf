@@ -186,10 +186,6 @@ workflow {
         .map { it.trim() }
         .join(expr_ensg)
 
-    //TODO: need to save info in case we want to use the same transformation for other cohorts (rather than refitting)
-    // 1. genomic pc loadings
-    // 2. transcriptomic pc loadings
-    // 3. regress-out coefficients for covariates
     expr_table = PREPROCESSEXPR(pfile_filtered, params.expr, genes)[0]
 
     // based on modelable gene list create channel of tuples

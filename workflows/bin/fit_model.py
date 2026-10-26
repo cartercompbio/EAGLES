@@ -140,6 +140,7 @@ def load_data(pgen_path, psam_path, pvar_path, expression_path, samples = None, 
     return X, y
 
 def objective(trial, X, y, model_type, penalty=0.1, n_splits=5, early_stopping_rounds=50):
+    
     if model_type != 'xgb':
         raise ValueError('valid options are "xgb"')
 
@@ -200,7 +201,6 @@ def objective(trial, X, y, model_type, penalty=0.1, n_splits=5, early_stopping_r
     val_score = np.mean(val_scores)
     overfit_gap = max(val_score - train_score, 0)
 
-    # stash the actual tree counts so you can inspect/reuse them later
     trial.set_user_attr('best_iterations', best_iters)
     trial.set_user_attr('mean_best_iteration', float(np.mean(best_iters)))
 
